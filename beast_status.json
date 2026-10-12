@@ -1,31 +1,9 @@
 {
   "schema_version": 1,
-  "state": "dead",
-  "died_at": 1791773390.142,
-  "died_at_utc": "2026-10-12T02:49:50.142Z",
-  "updated_at": 1791775770.039,
-  "updated_at_utc": "2026-10-12T03:29:30.038Z",
-  "sequence": 8,
-  "bosses": {
-    "Beast": {
-      "name": "Beast",
-      "boss_id": 19473,
-      "state": "dead",
-      "died_at": 1791773390.142,
-      "died_at_utc": "2026-10-12T02:49:50.142Z",
-      "updated_at": 1791775770.039,
-      "updated_at_utc": "2026-10-12T03:29:30.038Z",
-      "sequence": 1,
-      "respawn_seconds": 3600,
-      "spawn_point": {
-        "x": 157.0,
-        "y": 433.0,
-        "z": 220.0
-      },
-      "observer": {
-        "character_id": 1410855,
-        "pid": 15624
-      }
-    }
-  }
+  "state": "alive",
+  "died_at": null,
+  "died_at_utc": null,
+  "updated_at": 1791776999.003,
+  "updated_at_utc": "2026-10-12T03:49:59Z",
+  "sequence": 9
 }
