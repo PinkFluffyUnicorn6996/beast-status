@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0d14">
+  <meta name="description" content="Live Beast status and respawn countdown for Bestial Onslaught.">
+  <meta property="og:title" content="Beast Tracker">
+  <meta property="og:description" content="Live Beast status and respawn countdown.">
+  <title>Beast Tracker — Live Status</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090c12;
+      --panel: rgba(17, 23, 34, .82);
+      --panel-strong: #111824;
+      --border: rgba(159, 181, 216, .14);
+      --text: #f2f5fb;
+      --muted: #929fb4;
+      --subtle: #637086;
+      --green: #64e6ae;
+      --green-soft: rgba(100, 230, 174, .12);
+      --red: #ff7585;
+      --red-soft: rgba(255, 117, 133, .12);
+      --amber: #ffd27a;
+      --amber-soft: rgba(255, 210, 122, .12);
+      --blue: #8bbdff;
+      --shadow: 0 28px 90px rgba(0, 0, 0, .35);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: var(--bg); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 12% 0%, rgba(67, 104, 169, .18), transparent 36rem),
+        radial-gradient(ellipse at 100% 18%, rgba(38, 151, 125, .10), transparent 32rem),
+        linear-gradient(180deg, #0b1019 0%, #090c12 70%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: "ss01" on;
+    }
+
+    button { font: inherit; }
+    .page { width: min(100% - 36px, 920px); margin: 0 auto; padding: 26px 0 30px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 34px; }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto;
+      border: 1px solid rgba(139, 189, 255, .26); border-radius: 14px;
+      color: var(--blue); background: linear-gradient(145deg, rgba(139,189,255,.16), rgba(100,230,174,.07));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand-name { font-size: 13px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .brand-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .live-pill { display: inline-flex; align-items: center; gap: 8px; color: #b6c5d9; font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px rgba(100,230,174,.7); }
+    .live-dot.warn { background: var(--amber); box-shadow: 0 0 14px rgba(255,210,122,.55); }
+    .live-dot.down { background: var(--red); box-shadow: 0 0 14px rgba(255,117,133,.55); }
+    .icon-button { display: grid; place-items: center; width: 38px; height: 38px; color: var(--muted); border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.025); cursor: pointer; transition: color .18s, border-color .18s, background .18s; }
+    .icon-button:hover { color: var(--text); border-color: rgba(139,189,255,.35); background: rgba(139,189,255,.07); }
+    .icon-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    .icon-button svg { width: 17px; height: 17px; }
+    .eyebrow { color: var(--blue); text-transform: uppercase; letter-spacing: .20em; font-size: 10px; line-height: 1.5; font-weight: 850; }
+    .intro { margin: 0 0 22px; }
+    h1 { margin: 7px 0 8px; font-size: clamp(27px, 5vw, 42px); letter-spacing: -.045em; line-height: 1.1; font-weight: 780; }
+    .intro-copy { margin: 0; max-width: 590px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+    .main-card {
+      position: relative; overflow: hidden; padding: clamp(22px, 4.5vw, 40px);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(20,29,43,.94), rgba(13,18,28,.94));
+      box-shadow: var(--shadow);
+    }
+    .main-card::before { content: ""; position: absolute; pointer-events: none; top: -110px; right: -90px; width: 330px; height: 330px; border-radius: 50%; filter: blur(1px); background: radial-gradient(circle, var(--glow, rgba(139,189,255,.12)), transparent 68%); }
+    .main-card.alive { --glow: rgba(100,230,174,.16); }
+    .main-card.dead { --glow: rgba(255,117,133,.17); }
+    .main-card.unknown { --glow: rgba(255,210,122,.12); }
+    .status-row { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .status-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
+    .status-symbol { width: 56px; height: 56px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 18px; border: 1px solid var(--symbol-border, rgba(139,189,255,.25)); color: var(--symbol-color, var(--blue)); background: var(--symbol-bg, rgba(139,189,255,.10)); }
+    .alive .status-symbol { --symbol-border: rgba(100,230,174,.26); --symbol-color: var(--green); --symbol-bg: var(--green-soft); }
+    .dead .status-symbol { --symbol-border: rgba(255,117,133,.28); --symbol-color: var(--red); --symbol-bg: var(--red-soft); }
+    .unknown .status-symbol { --symbol-border: rgba(255,210,122,.25); --symbol-color: var(--amber); --symbol-bg: var(--amber-soft); }
+    .status-symbol svg { width: 26px; height: 26px; }
+    .status-label { color: var(--muted); font-size: 10px; letter-spacing: .17em; font-weight: 850; text-transform: uppercase; margin-bottom: 6px; }
+    .status-title { margin: 0; font-size: clamp(21px, 4vw, 30px); font-weight: 850; letter-spacing: -.035em; line-height: 1.1; }
+    .alive .status-title { color: var(--green); }
+    .dead .status-title { color: var(--red); }
+    .unknown .status-title { color: var(--amber); }
+    .status-description { color: #a7b3c5; margin-top: 8px; font-size: 13px; line-height: 1.6; }
+    .state-badge { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); color: #b9c6d8; background: rgba(255,255,255,.025); font-size: 10px; text-transform: uppercase; font-weight: 800; letter-spacing: .08em; }
+    .state-badge .tiny-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .dead .state-badge .tiny-dot { background: var(--red); }
+    .unknown .state-badge .tiny-dot { background: var(--amber); }
+
+    .divider { height: 1px; background: var(--border); margin: 30px 0 25px; }
+    .timer-layout { position: relative; display: grid; grid-template-columns: 1fr minmax(180px, 225px); gap: 20px; align-items: center; }
+    .timer-caption { color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .18em; text-transform: uppercase; }
+    .timer { margin: 12px 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: clamp(45px, 9vw, 76px); line-height: 1; letter-spacing: -.075em; font-weight: 780; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
+    .timer.unknown-time { color: var(--subtle); letter-spacing: .02em; font-size: clamp(31px, 6vw, 51px); }
+    .timer-note { font-size: 12px; line-height: 1.65; color: var(--muted); }
+    .timer-note strong { color: #d6deea; font-weight: 700; }
+    .timer-side { padding: 17px; border-radius: 16px; border: 1px solid var(--border); background: rgba(4,8,14,.23); min-width: 0; }
+    .side-heading { color: var(--subtle); font-weight: 850; font-size: 9px; text-transform: uppercase; letter-spacing: .16em; margin-bottom: 10px; }
+    .side-value { font-size: 15px; font-weight: 750; color: #dce5f2; overflow-wrap: anywhere; }
+    .side-detail { font-size: 11px; line-height: 1.55; color: var(--muted); margin-top: 5px; }
+    .meter { height: 4px; overflow: hidden; background: rgba(255,255,255,.075); border-radius: 5px; margin-top: 15px; }
+    .meter-fill { height: 100%; width: 0%; background: var(--blue); border-radius: inherit; transition: width .45s linear; }
+    .dead .meter-fill { background: var(--red); }
+    .alive .meter-fill { background: var(--green); }
+    .unknown .meter-fill { background: var(--amber); }
+
+    .info-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+    .info-tile { min-width: 0; border: 1px solid var(--border); border-radius: 16px; background: rgba(255,255,255,.022); padding: 16px; }
+    .info-label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .10em; }
+    .info-label svg { width: 14px; height: 14px; opacity: .8; }
+    .info-value { color: #dfe6f1; font-size: 13px; font-weight: 700; margin-top: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+    .info-detail { color: var(--subtle); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+    .notice { display: none; padding: 12px 14px; margin-top: 14px; border: 1px solid rgba(255,210,122,.2); border-radius: 12px; color: #f1d49a; background: rgba(255,210,122,.06); font-size: 12px; line-height: 1.55; }
+    .notice.visible { display: block; }
+    .notice.error { color: #ffb4bd; border-color: rgba(255,117,133,.22); background: rgba(255,117,133,.06); }
+    footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; color: var(--subtle); font-size: 11px; line-height: 1.6; padding: 18px 4px 0; }
+    .footer-status { display: inline-flex; align-items: center; gap: 7px; }
+    .footer-status svg { width: 13px; height: 13px; }
+    .footer-right { text-align: right; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 650px) {
+      .page { width: min(100% - 24px, 920px); padding-top: 16px; }
+      .topbar { margin-bottom: 27px; }
+      .brand-sub { display: none; }
+      .live-pill { font-size: 9px; letter-spacing: .06em; }
+      .main-card { border-radius: 20px; }
+      .status-row { flex-direction: column; }
+      .state-badge { margin-left: 72px; }
+      .status-symbol { width: 52px; height: 52px; }
+      .timer-layout { grid-template-columns: 1fr; gap: 20px; }
+      .timer-side { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: center; }
+      .side-heading { grid-column: 1 / -1; }
+      .side-detail { margin-top: 0; text-align: right; }
+      .meter { grid-column: 1 / -1; }
+      .info-grid { grid-template-columns: 1fr; gap: 9px; }
+      .info-tile { padding: 13px 15px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; }
+      .info-value { margin-top: 0; text-align: right; }
+      .info-detail { grid-column: 1 / -1; }
+      footer { align-items: flex-start; flex-direction: column; gap: 5px; }
+      .footer-right { text-align: left; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand" aria-label="Beast Tracker home">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m9 12 2 2 4-4"/><path d="M7.7 7.8 12 10l4.3-2.2"/></svg>
+        </div>
+        <div>
+          <div class="brand-name">Beast Tracker</div>
+          <div class="brand-sub">Bestial Onslaught · Community status</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="live-pill"><span class="live-dot warn" id="liveDot"></span><span id="connectionLabel">Connecting</span></div>
+        <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh status now" title="Refresh now">
+          <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4.8 9A7.5 7.5 0 0 1 18 6.5L20 12M4 17v-5h5"/><path d="M20 15a7.5 7.5 0 0 1-13.2 2.5L4 12"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="intro">
+      <div class="eyebrow">Live encounter monitor</div>
+      <h1>Know when to return.</h1>
+      <p class="intro-copy">A shared view of the Beast's current state and expected respawn. Status refreshes automatically; the countdown updates every second.</p>
+    </section>
+
+    <section class="main-card unknown" id="mainCard" aria-labelledby="statusTitle">
+      <div class="status-row">
+        <div class="status-left">
+          <div class="status-symbol" aria-hidden="true" id="statusSymbol">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16h.01"/></svg>
+          </div>
+          <div>
+            <div class="status-label">Current encounter</div>
+            <h2 class="status-title" id="statusTitle">WAITING FOR STATUS</h2>
+            <div class="status-description" id="statusDescription">Fetching the latest shared Beast status from GitHub…</div>
+          </div>
+        </div>
+        <div class="state-badge"><span class="tiny-dot"></span><span id="stateBadgeText">Awaiting data</span></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="timer-layout">
+        <div>
+          <div class="timer-caption" id="timerCaption">Respawn countdown</div>
+          <div class="timer unknown-time" id="timerValue" role="timer" aria-live="off">--:--</div>
+          <div class="timer-note" id="timerNote">The countdown appears when the shared status includes a valid death timestamp.</div>
+        </div>
+        <aside class="timer-side" aria-label="Respawn details">
+          <div class="side-heading">Expected respawn</div>
+          <div class="side-value" id="respawnAt">Not available</div>
+          <div class="side-detail" id="respawnDetail">Waiting for a known death time</div>
+          <div class="meter" aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
+        </aside>
+      </div>
+      <div class="notice" id="notice" role="status"></div>
+    </section>
+
+    <section class="info-grid" aria-label="Status details">
+      <div class="info-tile">
+        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Death time</div>
+        <div class="info-value" id="deathTime">Unknown</div>
+        <div class="info-detail" id="deathDetail">No timestamp recorded</div>
+      </div>
+      <div class="info-tile">
+        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="6"/></svg> Last file update</div>
+        <div class="info-value" id="fileUpdated">Not available</div>
+        <div class="info-detail" id="fileUpdatedDetail">Timestamp from the shared JSON</div>
+      </div>
+      <div class="info-tile">
+        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8.5"/></svg> Data source</div>
+        <div class="info-value">GitHub JSON</div>
+        <div class="info-detail" id="pollDetail">Checking every 10 seconds</div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="footer-status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>Community status · Read-only</span>
+      </div>
+      <div class="footer-right" id="lastSync">Not synced yet</div>
+    </footer>
+  </main>
+
+  <script>
+    "use strict";
+
+    // Public JSON file in the existing repository.
+    const STATUS_URL = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/main/beast_status.json";
+    const POLL_INTERVAL_MS = 10_000;
+    // Beast Checker currently uses a 60-minute respawn interval.
+    const RESPAWN_DURATION_SECONDS = 60 * 60;
+
+    const $ = (id) => document.getElementById(id);
+    const els = {
+      mainCard: $("mainCard"), liveDot: $("liveDot"), connectionLabel: $("connectionLabel"),
+      refreshButton: $("refreshButton"), refreshIcon: $("refreshIcon"), statusSymbol: $("statusSymbol"),
+      statusTitle: $("statusTitle"), statusDescription: $("statusDescription"),
+      stateBadgeText: $("stateBadgeText"), timerCaption: $("timerCaption"), timerValue: $("timerValue"),
+      timerNote: $("timerNote"), respawnAt: $("respawnAt"), respawnDetail: $("respawnDetail"),
+      meterFill: $("meterFill"), notice: $("notice"), deathTime: $("deathTime"),
+      deathDetail: $("deathDetail"), fileUpdated: $("fileUpdated"), fileUpdatedDetail: $("fileUpdatedDetail"),
+      pollDetail: $("pollDetail"), lastSync: $("lastSync")
+    };
+
+    const ICONS = {
+      alive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/><circle cx="12" cy="12" r="9"/></svg>',
+      dead: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.8 5 7l1.2 3.2-1.1 3.3 3.2 1.7L9 20h6l.7-4.8 3.2-1.7-1.1-3.3L19 7l-3-3.2L12 5 8 3.8Z"/><path d="m9.5 9.5 5 5m0-5-5 5"/></svg>',
+      unknown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16h.01"/></svg>'
+    };
+
+    let payload = null;
+    let lastFetchAt = null;
+    let lastFetchError = null;
+    let isFetching = false;
+
+    function parseTimestamp(primary, fallback) {
+      let value = primary;
+      if (value === null || value === undefined || value === "") value = fallback;
+      if (value === null || value === undefined || value === "") return null;
+
+      if (typeof value === "number" || (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()))) {
+        let n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        // Unix seconds are ~1e9; millisecond epochs are ~1e12.
+        if (n > 1e12) return n;
+        return n * 1000;
+      }
+
+      const parsed = Date.parse(String(value));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function safeDate(ms, withSeconds = false) {
+      if (!Number.isFinite(ms)) return "Not available";
+      try {
+        return new Intl.DateTimeFormat(undefined, {
+          year: "numeric", month: "short", day: "numeric",
+          hour: "2-digit", minute: "2-digit", ...(withSeconds ? { second: "2-digit" } : {})
+        }).format(new Date(ms));
+      } catch (_) { return new Date(ms).toLocaleString(); }
+    }
+
+    function relativeTime(ms, now = Date.now()) {
+      if (!Number.isFinite(ms)) return "Timestamp unavailable";
+      const delta = Math.max(0, Math.floor((now - ms) / 1000));
+      if (delta < 10) return "Just now";
+      if (delta < 60) return `${delta}s ago`;
+      const minutes = Math.floor(delta / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ${minutes % 60}m ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h ago`;
+    }
+
+    function formatDuration(totalSeconds) {
+      const seconds = Math.max(0, Math.floor(totalSeconds));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      if (hours > 0) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+      return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+    }
+
+    function setConnection(mode, label) {
+      els.connectionLabel.textContent = label;
+      els.liveDot.className = "live-dot" + (mode === "ok" ? "" : mode === "down" ? " down" : " warn");
+    }
+
+    function showNotice(message, isError = false) {
+      els.notice.textContent = message || "";
+      els.notice.className = "notice" + (message ? " visible" : "") + (isError ? " error" : "");
+    }
+
+    function getState(data) {
+      const state = String(data?.state || "unknown").toLowerCase();
+      return ["alive", "dead", "unknown"].includes(state) ? state : "unknown";
+    }
+
+    function render(now = Date.now()) {
+      const data = payload || {};
+      const state = getState(data);
+      const deathMs = parseTimestamp(data.died_at, data.died_at_utc);
+      const updateMs = parseTimestamp(data.updated_at, data.updated_at_utc);
+      const respawnMs = state === "dead" && deathMs !== null ? deathMs + RESPAWN_DURATION_SECONDS * 1000 : null;
+
+      els.mainCard.className = `main-card ${state}`;
+      els.statusSymbol.innerHTML = ICONS[state];
+
+      if (state === "alive") {
+        els.statusTitle.textContent = "BEAST IS ALIVE";
+        els.statusDescription.textContent = "The latest shared status reports that the Beast is alive.";
+        els.stateBadgeText.textContent = "Alive";
+        els.timerCaption.textContent = "Current encounter";
+        els.timerValue.className = "timer";
+        els.timerValue.textContent = "ALIVE";
+        els.timerNote.innerHTML = "The Beast is alive. The respawn countdown is not active.";
+        els.respawnAt.textContent = "Alive now";
+        els.respawnDetail.textContent = "Waiting for the next confirmed death";
+        els.meterFill.style.width = "100%";
+      } else if (state === "dead") {
+        els.stateBadgeText.textContent = "Dead";
+        if (deathMs === null) {
+          els.statusTitle.textContent = "BEAST DEAD";
+          els.statusDescription.textContent = "The Beast is confirmed dead, but its kill time is unknown.";
+          els.timerCaption.textContent = "Respawn countdown";
+          els.timerValue.className = "timer unknown-time";
+          els.timerValue.textContent = "UNKNOWN";
+          els.timerNote.innerHTML = "<strong>Countdown unavailable.</strong> A death timestamp has not been recorded, so the respawn time cannot be calculated accurately.";
+          els.respawnAt.textContent = "Not available";
+          els.respawnDetail.textContent = "Waiting for a known death time";
+          els.meterFill.style.width = "0%";
+        } else {
+          const remaining = Math.ceil((respawnMs - now) / 1000);
+          const expired = remaining <= 0;
+          els.statusTitle.textContent = "BEAST DEAD";
+          els.statusDescription.textContent = expired
+            ? "The expected respawn time has passed; waiting for a confirmed alive status."
+            : "The shared death timestamp is known. Countdown is updating live.";
+          els.timerCaption.textContent = expired ? "Expected respawn reached" : "Time until respawn";
+          els.timerValue.className = "timer";
+          els.timerValue.textContent = expired ? "00:00" : formatDuration(remaining);
+          els.timerNote.innerHTML = expired
+            ? "<strong>Respawn window elapsed.</strong> This does not confirm the Beast is alive; the shared status must change first."
+            : `Expected respawn at <strong>${safeDate(respawnMs)}</strong> in your local time.`;
+          els.respawnAt.textContent = safeDate(respawnMs);
+          els.respawnDetail.textContent = expired ? `Expected ${relativeTime(respawnMs, now)}` : "Based on a 60-minute respawn interval";
+          const elapsed = (now - deathMs) / (RESPAWN_DURATION_SECONDS * 1000);
+          els.meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
+        }
+      } else {
+        els.statusTitle.textContent = "WAITING FOR STATUS";
+        els.statusDescription.textContent = "No confirmed Beast state is available in the shared JSON yet.";
+        els.stateBadgeText.textContent = "Awaiting data";
+        els.timerCaption.textContent = "Respawn countdown";
+        els.timerValue.className = "timer unknown-time";
+        els.timerValue.textContent = "--:--";
+        els.timerNote.textContent = "No timer is shown until a confirmed Beast death and a usable timestamp are available.";
+        els.respawnAt.textContent = "Not available";
+        els.respawnDetail.textContent = "No confirmed death time";
+        els.meterFill.style.width = "0%";
+      }
+
+      els.deathTime.textContent = deathMs === null ? "Unknown" : safeDate(deathMs);
+      els.deathDetail.textContent = deathMs === null ? "No timestamp recorded" : relativeTime(deathMs, now);
+      els.fileUpdated.textContent = updateMs === null ? "Not available" : safeDate(updateMs);
+      els.fileUpdatedDetail.textContent = updateMs === null ? "No update timestamp in JSON" : relativeTime(updateMs, now);
+      els.pollDetail.textContent = `Refreshes every ${POLL_INTERVAL_MS / 1000} seconds`;
+
+      if (lastFetchError) {
+        setConnection(payload ? "warn" : "down", payload ? "Stale data" : "Offline");
+        showNotice(payload
+          ? `Couldn't refresh GitHub data (${lastFetchError}). Showing the last successfully retrieved status.`
+          : `Couldn't load the status file (${lastFetchError}). Check the repository name, branch, file path, and network connection.`, true);
+      } else if (payload && lastFetchAt !== null) {
+        setConnection("ok", "Live status");
+        showNotice("");
+      } else {
+        setConnection("wait", "Connecting");
+        showNotice("");
+      }
+
+      els.lastSync.textContent = lastFetchAt === null
+        ? "Not synced yet"
+        : `Last checked ${relativeTime(lastFetchAt, now)} · auto-refresh on`;
+    }
+
+    async function fetchStatus() {
+      if (isFetching) return;
+      isFetching = true;
+      els.refreshIcon.classList.add("spin");
+      try {
+        const url = `${STATUS_URL}?_=${Date.now()}`;
+        const response = await fetch(url, {
+          method: "GET",
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          throw new Error("unexpected JSON format");
+        }
+        const state = String(data.state || "unknown").toLowerCase();
+        if (!["alive", "dead", "unknown"].includes(state)) {
+          throw new Error("unrecognized status value");
+        }
+        payload = data;
+        lastFetchAt = Date.now();
+        lastFetchError = null;
+      } catch (error) {
+        lastFetchError = error instanceof Error ? error.message : String(error);
+      } finally {
+        isFetching = false;
+        els.refreshIcon.classList.remove("spin");
+        render();
+      }
+    }
+
+    els.refreshButton.addEventListener("click", fetchStatus);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) fetchStatus();
+    });
+
+    fetchStatus();
+    window.setInterval(() => render(), 1000);
+    window.setInterval(() => fetchStatus(), POLL_INTERVAL_MS);
+  </script>
+</body>
+</html>
