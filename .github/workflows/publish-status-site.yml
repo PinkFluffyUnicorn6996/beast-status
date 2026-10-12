@@ -1,0 +1,111 @@
+name: Publish shared boss status site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "status-snapshot.json"
+      - "index.html"
+      - ".github/workflows/publish-status-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out latest main branch
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build site from the observer-published shared snapshot
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import time
+          from pathlib import Path
+
+          # status-snapshot.json is pushed by the standalone observer after each
+          # confirmed transition. Fallback to the canonical source only for the
+          # very first manual deployment, before the snapshot has been created.
+          source = Path("status-snapshot.json")
+          if not source.exists():
+              source = Path("beast_status.json")
+          template = Path("index.html")
+          output = Path("_site")
+          output.mkdir(exist_ok=True)
+
+          data = json.loads(source.read_text(encoding="utf-8"))
+          if not isinstance(data, dict):
+              raise SystemExit("beast_status.json must contain a JSON object")
+          if str(data.get("state", "unknown")).lower() not in {"alive", "dead", "unknown"}:
+              raise SystemExit("beast_status.json has an invalid root Beast state")
+
+          html = template.read_text(encoding="utf-8")
+          marker = "/* STATUS_SNAPSHOT_INJECTION */"
+          if html.count(marker) != 1:
+              raise SystemExit(f"index.html must contain exactly one {marker!r} marker")
+
+          # Use the actual checked-out commit so the embedded snapshot and
+          # status-version.json always share the same build ID.
+          build_id = subprocess.check_output(
+              ["git", "rev-parse", "--short=12", "HEAD"], text=True
+          ).strip()
+          built_at_ms = int(time.time() * 1000)
+          # Escape characters that could terminate or confuse an inline script.
+          embedded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+          embedded = embedded.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+          injection = (
+              f"window.__BOSS_STATUS_SNAPSHOT__ = {embedded};\n"
+              f"window.__BOSS_STATUS_BUILD_ID__ = {json.dumps(build_id)};\n"
+              f"window.__BOSS_STATUS_BUILT_AT__ = {built_at_ms};"
+          )
+          html = html.replace(marker, injection, 1)
+          (output / "index.html").write_text(html, encoding="utf-8")
+          # Make the same immutable snapshot available as a simple same-origin
+          # JSON document for BOt.pyw. The bot never reads beast_status.json or RAW.
+          (output / "status-snapshot.json").write_text(
+              json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n",
+              encoding="utf-8"
+          )
+
+          version = {
+              "build_id": build_id,
+              "built_at_ms": built_at_ms,
+              "state": data.get("state", "unknown"),
+              "sequence": data.get("sequence", 0),
+              "updated_at": data.get("updated_at"),
+              "updated_at_utc": data.get("updated_at_utc"),
+          }
+          (output / "status-version.json").write_text(
+              json.dumps(version, ensure_ascii=False, separators=(",", ":")),
+              encoding="utf-8"
+          )
+          print(f"Built published snapshot {build_id} from {source}: state={version['state']} sequence={version['sequence']}")
+          PY
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site/
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
