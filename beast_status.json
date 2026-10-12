@@ -5,5 +5,16 @@
   "died_at_utc": 1791777121.4300227,
   "updated_at": 1791778170.721,
   "updated_at_utc": "2026-10-12T04:09:30Z",
-  "sequence": 1
+  "sequence": 1,
+  "Sword Tamer": {
+    "name": "Sword Tamer",
+    "boss_id": 19475,
+    "respawn_seconds": 86400,
+    "state": "dead",
+    "died_at": null,
+    "died_at_utc": null,
+    "updated_at": 1791778657.555,
+    "updated_at_utc": "2026-10-12T04:17:37.555Z",
+    "sequence": 1
+  }
 }
