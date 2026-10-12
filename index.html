@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0d14">
-  <meta name="description" content="Live Beast status and respawn countdown for Bestial Onslaught.">
-  <meta property="og:title" content="Beast Tracker">
-  <meta property="og:description" content="Live Beast status and respawn countdown.">
-  <title>Beast Tracker — Live Status</title>
+  <meta name="description" content="Live boss status and respawn countdowns for Bestial Onslaught.">
+  <meta property="og:title" content="Boss Tracker">
+  <meta property="og:description" content="Live boss status and respawn countdowns.">
+  <title>Boss Tracker — Live Status</title>
   <style>
     :root {
       color-scheme: dark;
@@ -152,6 +152,58 @@
       footer { align-items: flex-start; flex-direction: column; gap: 5px; }
       .footer-right { text-align: left; }
     }
+
+    .boss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+    .boss-card {
+      --boss-glow: rgba(139,189,255,.10); position: relative; overflow: hidden; min-width: 0;
+      border: 1px solid var(--border); border-radius: 22px; padding: 22px;
+      background: linear-gradient(145deg, rgba(20,29,43,.96), rgba(13,18,28,.96));
+      box-shadow: 0 18px 55px rgba(0,0,0,.22);
+    }
+    .boss-card::before { content: ""; position: absolute; pointer-events: none; top: -130px; right: -100px; width: 290px; height: 290px; border-radius: 50%; background: radial-gradient(circle, var(--boss-glow), transparent 68%); }
+    .boss-card.alive { --boss-glow: rgba(100,230,174,.14); }
+    .boss-card.dead { --boss-glow: rgba(255,117,133,.15); }
+    .boss-card.unknown { --boss-glow: rgba(255,210,122,.11); }
+    .boss-card-top { position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .boss-ident { min-width: 0; }
+    .boss-overline { color: var(--blue); font-size: 9px; font-weight: 850; text-transform: uppercase; letter-spacing: .18em; margin-bottom: 6px; }
+    .boss-name { margin: 0; font-size: clamp(20px, 3vw, 26px); letter-spacing: -.035em; line-height: 1.15; overflow-wrap: anywhere; }
+    .boss-id { color: var(--muted); font-size: 11px; margin-top: 7px; }
+    .state-pill { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 7px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.025); color: #c1cddd; font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .state-pill .tiny-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--amber); }
+    .boss-card.alive .state-pill .tiny-dot { background: var(--green); box-shadow: 0 0 10px rgba(100,230,174,.35); }
+    .boss-card.dead .state-pill .tiny-dot { background: var(--red); box-shadow: 0 0 10px rgba(255,117,133,.35); }
+    .boss-card.unknown .state-pill .tiny-dot { background: var(--amber); }
+    .boss-description { position: relative; color: #a7b3c5; margin: 16px 0 18px; min-height: 38px; font-size: 12px; line-height: 1.6; }
+    .boss-timer-wrap { position: relative; padding: 16px 16px 14px; border: 1px solid var(--border); border-radius: 16px; background: rgba(4,8,14,.25); }
+    .boss-timer-label { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+    .boss-countdown { margin: 9px 0 7px; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: clamp(32px, 5vw, 48px); line-height: 1.08; letter-spacing: -.06em; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .boss-card.alive .boss-countdown { color: var(--green); font-size: clamp(27px, 4vw, 38px); letter-spacing: -.035em; }
+    .boss-card.dead .boss-countdown { color: #ffd8dd; }
+    .boss-card.unknown .boss-countdown { color: var(--amber); font-size: clamp(28px, 4vw, 38px); letter-spacing: -.015em; }
+    .boss-timer-note { color: var(--muted); font-size: 11px; line-height: 1.55; min-height: 17px; }
+    .boss-meter { height: 4px; margin-top: 13px; overflow: hidden; border-radius: 4px; background: rgba(255,255,255,.07); }
+    .boss-meter-fill { width: 0; height: 100%; border-radius: inherit; background: var(--blue); transition: width .45s linear; }
+    .boss-card.alive .boss-meter-fill { background: var(--green); }
+    .boss-card.dead .boss-meter-fill { background: var(--red); }
+    .boss-card.unknown .boss-meter-fill { background: var(--amber); }
+    .boss-details { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 11px; }
+    .boss-detail { min-width: 0; padding: 11px 10px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.02); }
+    .boss-detail-label { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .boss-detail-value { color: #dfe6f1; margin-top: 7px; font-size: 11px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+    .boss-card-foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding-top: 13px; color: var(--subtle); font-size: 10px; }
+    .empty-state { grid-column: 1 / -1; padding: 28px; border: 1px solid var(--border); border-radius: 20px; background: var(--panel); color: var(--muted); text-align: center; line-height: 1.7; }
+    .notice.global-notice { display: none; margin: 0 0 15px; }
+    .notice.global-notice.visible { display: block; }
+    @media (max-width: 650px) {
+      .boss-grid { grid-template-columns: 1fr; gap: 12px; }
+      .boss-card { padding: 18px; border-radius: 19px; }
+      .boss-details { gap: 6px; }
+      .boss-detail { padding: 9px 8px; }
+      .boss-detail-value { font-size: 10px; }
+      .boss-description { min-height: 0; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
@@ -160,12 +212,12 @@
 <body>
   <main class="page">
     <header class="topbar">
-      <div class="brand" aria-label="Beast Tracker home">
+      <div class="brand" aria-label="Boss Tracker home">
         <div class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m9 12 2 2 4-4"/><path d="M7.7 7.8 12 10l4.3-2.2"/></svg>
         </div>
         <div>
-          <div class="brand-name">Beast Tracker</div>
+          <div class="brand-name">Boss Tracker</div>
           <div class="brand-sub">Bestial Onslaught · Community status</div>
         </div>
       </div>
@@ -179,59 +231,13 @@
 
     <section class="intro">
       <div class="eyebrow">Live encounter monitor</div>
-      <h1>Know when to return.</h1>
-      <p class="intro-copy">A shared view of the Beast's current state and expected respawn. Status refreshes automatically; the countdown updates every second.</p>
+      <h1>Every boss. One live view.</h1>
+      <p class="intro-copy">Live status and respawn countdowns for every boss recorded in the shared GitHub JSON. Beast stays in the original root fields; additional bosses appear as separate top-level records.</p>
     </section>
 
-    <section class="main-card unknown" id="mainCard" aria-labelledby="statusTitle">
-      <div class="status-row">
-        <div class="status-left">
-          <div class="status-symbol" aria-hidden="true" id="statusSymbol">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16h.01"/></svg>
-          </div>
-          <div>
-            <div class="status-label">Current encounter</div>
-            <h2 class="status-title" id="statusTitle">WAITING FOR STATUS</h2>
-            <div class="status-description" id="statusDescription">Fetching the latest shared Beast status from GitHub…</div>
-          </div>
-        </div>
-        <div class="state-badge"><span class="tiny-dot"></span><span id="stateBadgeText">Awaiting data</span></div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="timer-layout">
-        <div>
-          <div class="timer-caption" id="timerCaption">Respawn countdown</div>
-          <div class="timer unknown-time" id="timerValue" role="timer" aria-live="off">--:--</div>
-          <div class="timer-note" id="timerNote">The countdown appears when the shared status includes a valid death timestamp.</div>
-        </div>
-        <aside class="timer-side" aria-label="Respawn details">
-          <div class="side-heading">Expected respawn</div>
-          <div class="side-value" id="respawnAt">Not available</div>
-          <div class="side-detail" id="respawnDetail">Waiting for a known death time</div>
-          <div class="meter" aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
-        </aside>
-      </div>
-      <div class="notice" id="notice" role="status"></div>
-    </section>
-
-    <section class="info-grid" aria-label="Status details">
-      <div class="info-tile">
-        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Death time</div>
-        <div class="info-value" id="deathTime">Unknown</div>
-        <div class="info-detail" id="deathDetail">No timestamp recorded</div>
-      </div>
-      <div class="info-tile">
-        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="6"/></svg> Last file update</div>
-        <div class="info-value" id="fileUpdated">Not available</div>
-        <div class="info-detail" id="fileUpdatedDetail">Timestamp from the shared JSON</div>
-      </div>
-      <div class="info-tile">
-        <div class="info-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8.5"/></svg> Data source</div>
-        <div class="info-value">GitHub JSON</div>
-        <div class="info-detail" id="pollDetail">Checking every 10 seconds</div>
-      </div>
+    <div class="notice global-notice" id="notice" role="status"></div>
+    <section class="boss-grid" id="bossGrid" aria-label="Live boss status cards">
+      <div class="empty-state">Fetching the latest shared boss statuses from GitHub…</div>
     </section>
 
     <footer>
@@ -246,58 +252,39 @@
   <script>
     "use strict";
 
-    // Public JSON file in the existing repository.
     const STATUS_URL = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/main/beast_status.json";
     const POLL_INTERVAL_MS = 10_000;
-    // Beast Checker currently uses a 60-minute respawn interval.
-    const RESPAWN_DURATION_SECONDS = 60 * 60;
-
+    const DEFAULT_RESPAWN_SECONDS = 60 * 60;
     const $ = (id) => document.getElementById(id);
     const els = {
-      mainCard: $("mainCard"), liveDot: $("liveDot"), connectionLabel: $("connectionLabel"),
-      refreshButton: $("refreshButton"), refreshIcon: $("refreshIcon"), statusSymbol: $("statusSymbol"),
-      statusTitle: $("statusTitle"), statusDescription: $("statusDescription"),
-      stateBadgeText: $("stateBadgeText"), timerCaption: $("timerCaption"), timerValue: $("timerValue"),
-      timerNote: $("timerNote"), respawnAt: $("respawnAt"), respawnDetail: $("respawnDetail"),
-      meterFill: $("meterFill"), notice: $("notice"), deathTime: $("deathTime"),
-      deathDetail: $("deathDetail"), fileUpdated: $("fileUpdated"), fileUpdatedDetail: $("fileUpdatedDetail"),
-      pollDetail: $("pollDetail"), lastSync: $("lastSync")
-    };
-
-    const ICONS = {
-      alive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/><circle cx="12" cy="12" r="9"/></svg>',
-      dead: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.8 5 7l1.2 3.2-1.1 3.3 3.2 1.7L9 20h6l.7-4.8 3.2-1.7-1.1-3.3L19 7l-3-3.2L12 5 8 3.8Z"/><path d="m9.5 9.5 5 5m0-5-5 5"/></svg>',
-      unknown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16h.01"/></svg>'
+      bossGrid: $("bossGrid"), liveDot: $("liveDot"), connectionLabel: $("connectionLabel"),
+      refreshButton: $("refreshButton"), refreshIcon: $("refreshIcon"), notice: $("notice"), lastSync: $("lastSync")
     };
 
     let payload = null;
     let lastFetchAt = null;
     let lastFetchError = null;
     let isFetching = false;
+    const cards = new Map();
 
     function parseTimestamp(primary, fallback) {
       let value = primary;
       if (value === null || value === undefined || value === "") value = fallback;
       if (value === null || value === undefined || value === "") return null;
-
       if (typeof value === "number" || (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()))) {
-        let n = Number(value);
+        const n = Number(value);
         if (!Number.isFinite(n) || n <= 0) return null;
-        // Unix seconds are ~1e9; millisecond epochs are ~1e12.
-        if (n > 1e12) return n;
-        return n * 1000;
+        return n > 1e12 ? n : n * 1000;
       }
-
       const parsed = Date.parse(String(value));
       return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
-    function safeDate(ms, withSeconds = false) {
+    function safeDate(ms) {
       if (!Number.isFinite(ms)) return "Not available";
       try {
         return new Intl.DateTimeFormat(undefined, {
-          year: "numeric", month: "short", day: "numeric",
-          hour: "2-digit", minute: "2-digit", ...(withSeconds ? { second: "2-digit" } : {})
+          year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
         }).format(new Date(ms));
       } catch (_) { return new Date(ms).toLocaleString(); }
     }
@@ -317,11 +304,12 @@
 
     function formatDuration(totalSeconds) {
       const seconds = Math.max(0, Math.floor(totalSeconds));
-      const hours = Math.floor(seconds / 3600);
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
       const remainingSeconds = seconds % 60;
-      if (hours > 0) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
-      return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+      const clock = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+      return days > 0 ? `${days}d ${clock}` : clock;
     }
 
     function setConnection(mode, label) {
@@ -331,89 +319,207 @@
 
     function showNotice(message, isError = false) {
       els.notice.textContent = message || "";
-      els.notice.className = "notice" + (message ? " visible" : "") + (isError ? " error" : "");
+      els.notice.className = "notice global-notice" + (message ? " visible" : "") + (isError ? " error" : "");
     }
 
-    function getState(data) {
-      const state = String(data?.state || "unknown").toLowerCase();
-      return ["alive", "dead", "unknown"].includes(state) ? state : "unknown";
+    function makeElement(tag, className, text = "") {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (text !== undefined && text !== null) el.textContent = String(text);
+      return el;
+    }
+
+    function makeDetail(parent, label) {
+      const box = makeElement("div", "boss-detail");
+      const labelEl = makeElement("div", "boss-detail-label", label);
+      const valueEl = makeElement("div", "boss-detail-value", "Not available");
+      box.append(labelEl, valueEl);
+      parent.append(box);
+      return valueEl;
+    }
+
+    function createBossCard(key) {
+      const card = makeElement("article", "boss-card unknown");
+      card.dataset.bossKey = key;
+      const head = makeElement("div", "boss-card-top");
+      const identity = makeElement("div", "boss-ident");
+      identity.append(makeElement("div", "boss-overline", "Live encounter"));
+      const name = makeElement("h2", "boss-name", key);
+      const id = makeElement("div", "boss-id", "Boss ID unavailable");
+      identity.append(name, id);
+      const pill = makeElement("div", "state-pill");
+      pill.append(makeElement("span", "tiny-dot"), makeElement("span", "state-label", "Unknown"));
+      head.append(identity, pill);
+      const description = makeElement("p", "boss-description", "Waiting for the first valid status update.");
+      const timerWrap = makeElement("div", "boss-timer-wrap");
+      timerWrap.append(makeElement("div", "boss-timer-label", "Respawn countdown"));
+      const timer = makeElement("div", "boss-countdown", "--:--");
+      const timerNote = makeElement("div", "boss-timer-note", "A confirmed death time is required for a countdown.");
+      const meter = makeElement("div", "boss-meter");
+      const meterFill = makeElement("div", "boss-meter-fill");
+      meter.append(meterFill);
+      timerWrap.append(timer, timerNote, meter);
+      const details = makeElement("div", "boss-details");
+      const death = makeDetail(details, "Death time");
+      const respawn = makeDetail(details, "Expected respawn");
+      const updated = makeDetail(details, "Last update");
+      const foot = makeElement("div", "boss-card-foot");
+      const respawnLength = makeElement("span", "respawn-length", "Respawn: not set");
+      foot.append(respawnLength);
+      card.append(head, description, timerWrap, details, foot);
+      return { card, name, id, stateLabel: pill.querySelector(".state-label"), description, timer, timerNote,
+        meterFill, death, respawn, updated, respawnLength };
+    }
+
+    function normalizeRecord(key, section, rootDocument = null, isPrimaryBeast = false) {
+      const src = section && typeof section === "object" ? section : {};
+      const root = rootDocument && typeof rootDocument === "object" ? rootDocument : {};
+      let stateValue = isPrimaryBeast ? (root.state ?? src.state) : src.state;
+      stateValue = String(stateValue || "unknown").toLowerCase();
+      const state = ["alive", "dead", "unknown"].includes(stateValue) ? stateValue : "unknown";
+      const deathSource = isPrimaryBeast && (Object.prototype.hasOwnProperty.call(root, "died_at") || Object.prototype.hasOwnProperty.call(root, "died_at_utc")) ? root : src;
+      const updateSource = isPrimaryBeast && (Object.prototype.hasOwnProperty.call(root, "updated_at") || Object.prototype.hasOwnProperty.call(root, "updated_at_utc")) ? root : src;
+      const diedAt = parseTimestamp(deathSource.died_at, deathSource.died_at_utc);
+      const updatedAt = parseTimestamp(updateSource.updated_at, updateSource.updated_at_utc);
+      let respawnSeconds = Number(src.respawn_seconds);
+      if (!Number.isFinite(respawnSeconds) || respawnSeconds <= 0) respawnSeconds = DEFAULT_RESPAWN_SECONDS;
+      let bossId = src.boss_id;
+      if (bossId === null || bossId === undefined || bossId === "") bossId = isPrimaryBeast ? 19473 : null;
+      return {
+        key, name: String(src.name || key), bossId, state, diedAt, updatedAt, respawnSeconds,
+        sequence: Number(src.sequence) || 0
+      };
+    }
+
+    function isBossStatusRecord(value) {
+      return !!value && typeof value === "object" && !Array.isArray(value)
+        && ["alive", "dead", "unknown"].includes(String(value.state || "unknown").toLowerCase())
+        && ["died_at", "died_at_utc", "updated_at", "updated_at_utc", "sequence"].some((key) => key in value);
+    }
+
+    function getBossRecords(doc) {
+      if (!doc || typeof doc !== "object" || Array.isArray(doc)) return [];
+      const legacyNested = doc.bosses && typeof doc.bosses === "object" && !Array.isArray(doc.bosses)
+        ? doc.bosses : {};
+      const result = [];
+      const seenNames = new Set(["beast"]);
+
+      // Beast is represented exactly once by the legacy root-level fields consumed by
+      // bot.pyw. A previous observer build may have left bosses.Beast behind; never read
+      // its state/timestamps or render it as a second Beast. Read only its respawn setting
+      // as optional display metadata until that old nested structure is cleaned up.
+      const legacyBeast = Object.entries(legacyNested).find(([key, value]) =>
+        String(key).toLowerCase() === "beast" || String(value?.name || "").toLowerCase() === "beast");
+      const beastMetadata = legacyBeast && legacyBeast[1] && typeof legacyBeast[1] === "object"
+        ? legacyBeast[1] : {};
+      result.push(normalizeRecord("Beast", {
+        name: "Beast", boss_id: 19473,
+        respawn_seconds: beastMetadata.respawn_seconds || DEFAULT_RESPAWN_SECONDS
+      }, doc, true));
+
+      // New canonical format: every other boss is its own top-level object, using the
+      // same state/timestamp/sequence fields as Beast plus name/ID/respawn metadata.
+      const reserved = new Set([
+        "schema_version", "state", "died_at", "died_at_utc", "updated_at",
+        "updated_at_utc", "sequence", "bosses", "spawn_point", "observer", "beast"
+      ]);
+      for (const [key, value] of Object.entries(doc)) {
+        const lowerKey = String(key).toLowerCase();
+        if (reserved.has(lowerKey) || !isBossStatusRecord(value)) continue;
+        const canonical = lowerKey;
+        if (seenNames.has(canonical)) continue;
+        seenNames.add(canonical);
+        result.push(normalizeRecord(key, value, null, false));
+      }
+
+      // Backward compatibility: show old nested non-Beast records only when there is no
+      // top-level record with the same name. The root-level version always wins.
+      for (const [key, value] of Object.entries(legacyNested)) {
+        const canonical = String(key || value?.name || "").toLowerCase();
+        if (!canonical || canonical === "beast" || seenNames.has(canonical) || !isBossStatusRecord(value)) continue;
+        seenNames.add(canonical);
+        result.push(normalizeRecord(key, value, null, false));
+      }
+      return result;
+    }
+
+    function renderBoss(record, now) {
+      let view = cards.get(record.key);
+      if (!view) {
+        view = createBossCard(record.key);
+        cards.set(record.key, view);
+        els.bossGrid.append(view.card);
+      }
+      const { card, name, id, stateLabel, description, timer, timerNote, meterFill,
+        death, respawn, updated, respawnLength } = view;
+      const state = record.state;
+      card.className = `boss-card ${state}`;
+      name.textContent = record.name;
+      id.textContent = record.bossId === null ? "Boss ID not configured" : `Boss ID ${record.bossId}`;
+      stateLabel.textContent = state.toUpperCase();
+      death.textContent = record.diedAt === null ? "Unknown" : safeDate(record.diedAt);
+      updated.textContent = record.updatedAt === null ? "Not available" : safeDate(record.updatedAt);
+      const respawnAt = state === "dead" && record.diedAt !== null ? record.diedAt + record.respawnSeconds * 1000 : null;
+      respawnLength.textContent = `Respawn: ${formatDuration(record.respawnSeconds)}`;
+      if (state === "alive") {
+        description.textContent = `The shared status reports ${record.name} is alive.`;
+        timer.textContent = "ALIVE";
+        timerNote.textContent = "The respawn countdown is inactive while the boss is alive.";
+        respawn.textContent = "Alive now";
+        meterFill.style.width = "100%";
+      } else if (state === "dead" && record.diedAt === null) {
+        description.textContent = `${record.name} is reported dead, but the death timestamp is unknown.`;
+        timer.textContent = "TIME UNKNOWN";
+        timerNote.textContent = "A known death timestamp is needed to calculate the respawn time.";
+        respawn.textContent = "Not available";
+        meterFill.style.width = "0%";
+      } else if (state === "dead") {
+        const remaining = Math.ceil((respawnAt - now) / 1000);
+        const expired = remaining <= 0;
+        const overdueSeconds = expired ? Math.floor((now - respawnAt) / 1000) : 0;
+        description.textContent = expired
+          ? `${record.name} is still reported DEAD in the shared JSON. Its estimated respawn time passed ${formatDuration(overdueSeconds)} ago; status will change only after a contributor confirms it alive.`
+          : `${record.name} is reported dead. The countdown is updating live.`;
+        timer.textContent = expired ? `+${formatDuration(overdueSeconds)}` : formatDuration(remaining);
+        timerNote.textContent = expired
+          ? "OVERDUE · The timer is only an estimate. A passed timer does not prove the boss has spawned."
+          : `Expected respawn ${safeDate(respawnAt)} in your local time.`;
+        respawn.textContent = safeDate(respawnAt);
+        const elapsed = (now - record.diedAt) / (record.respawnSeconds * 1000);
+        meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
+      } else {
+        description.textContent = `No confirmed state for ${record.name} is available in the shared JSON yet.`;
+        timer.textContent = "--:--:--";
+        timerNote.textContent = "The countdown appears after a confirmed death with a valid timestamp.";
+        respawn.textContent = "Not available";
+        meterFill.style.width = "0%";
+      }
     }
 
     function render(now = Date.now()) {
-      const data = payload || {};
-      const state = getState(data);
-      const deathMs = parseTimestamp(data.died_at, data.died_at_utc);
-      const updateMs = parseTimestamp(data.updated_at, data.updated_at_utc);
-      const respawnMs = state === "dead" && deathMs !== null ? deathMs + RESPAWN_DURATION_SECONDS * 1000 : null;
-
-      els.mainCard.className = `main-card ${state}`;
-      els.statusSymbol.innerHTML = ICONS[state];
-
-      if (state === "alive") {
-        els.statusTitle.textContent = "BEAST IS ALIVE";
-        els.statusDescription.textContent = "The latest shared status reports that the Beast is alive.";
-        els.stateBadgeText.textContent = "Alive";
-        els.timerCaption.textContent = "Current encounter";
-        els.timerValue.className = "timer";
-        els.timerValue.textContent = "ALIVE";
-        els.timerNote.innerHTML = "The Beast is alive. The respawn countdown is not active.";
-        els.respawnAt.textContent = "Alive now";
-        els.respawnDetail.textContent = "Waiting for the next confirmed death";
-        els.meterFill.style.width = "100%";
-      } else if (state === "dead") {
-        els.stateBadgeText.textContent = "Dead";
-        if (deathMs === null) {
-          els.statusTitle.textContent = "BEAST DEAD";
-          els.statusDescription.textContent = "The Beast is confirmed dead, but its kill time is unknown.";
-          els.timerCaption.textContent = "Respawn countdown";
-          els.timerValue.className = "timer unknown-time";
-          els.timerValue.textContent = "UNKNOWN";
-          els.timerNote.innerHTML = "<strong>Countdown unavailable.</strong> A death timestamp has not been recorded, so the respawn time cannot be calculated accurately.";
-          els.respawnAt.textContent = "Not available";
-          els.respawnDetail.textContent = "Waiting for a known death time";
-          els.meterFill.style.width = "0%";
-        } else {
-          const remaining = Math.ceil((respawnMs - now) / 1000);
-          const expired = remaining <= 0;
-          els.statusTitle.textContent = "BEAST DEAD";
-          els.statusDescription.textContent = expired
-            ? "The expected respawn time has passed; waiting for a confirmed alive status."
-            : "The shared death timestamp is known. Countdown is updating live.";
-          els.timerCaption.textContent = expired ? "Expected respawn reached" : "Time until respawn";
-          els.timerValue.className = "timer";
-          els.timerValue.textContent = expired ? "00:00" : formatDuration(remaining);
-          els.timerNote.innerHTML = expired
-            ? "<strong>Respawn window elapsed.</strong> This does not confirm the Beast is alive; the shared status must change first."
-            : `Expected respawn at <strong>${safeDate(respawnMs)}</strong> in your local time.`;
-          els.respawnAt.textContent = safeDate(respawnMs);
-          els.respawnDetail.textContent = expired ? `Expected ${relativeTime(respawnMs, now)}` : "Based on a 60-minute respawn interval";
-          const elapsed = (now - deathMs) / (RESPAWN_DURATION_SECONDS * 1000);
-          els.meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
+      if (!payload) {
+        if (!els.bossGrid.querySelector(".empty-state")) {
+          els.bossGrid.replaceChildren(makeElement("div", "empty-state", "Waiting for the shared boss status file…"));
         }
       } else {
-        els.statusTitle.textContent = "WAITING FOR STATUS";
-        els.statusDescription.textContent = "No confirmed Beast state is available in the shared JSON yet.";
-        els.stateBadgeText.textContent = "Awaiting data";
-        els.timerCaption.textContent = "Respawn countdown";
-        els.timerValue.className = "timer unknown-time";
-        els.timerValue.textContent = "--:--";
-        els.timerNote.textContent = "No timer is shown until a confirmed Beast death and a usable timestamp are available.";
-        els.respawnAt.textContent = "Not available";
-        els.respawnDetail.textContent = "No confirmed death time";
-        els.meterFill.style.width = "0%";
+        const records = getBossRecords(payload);
+        const present = new Set(records.map((record) => record.key));
+        for (const [key, view] of cards.entries()) {
+          if (!present.has(key)) {
+            view.card.remove();
+            cards.delete(key);
+          }
+        }
+        const empty = els.bossGrid.querySelector(".empty-state");
+        if (empty) empty.remove();
+        for (const record of records) renderBoss(record, now);
       }
 
-      els.deathTime.textContent = deathMs === null ? "Unknown" : safeDate(deathMs);
-      els.deathDetail.textContent = deathMs === null ? "No timestamp recorded" : relativeTime(deathMs, now);
-      els.fileUpdated.textContent = updateMs === null ? "Not available" : safeDate(updateMs);
-      els.fileUpdatedDetail.textContent = updateMs === null ? "No update timestamp in JSON" : relativeTime(updateMs, now);
-      els.pollDetail.textContent = `Refreshes every ${POLL_INTERVAL_MS / 1000} seconds`;
-
       if (lastFetchError) {
-        setConnection(payload ? "warn" : "down", payload ? "Stale data" : "Offline");
+        setConnection(payload ? "wait" : "down", payload ? "Stale data" : "Offline");
         showNotice(payload
-          ? `Couldn't refresh GitHub data (${lastFetchError}). Showing the last successfully retrieved status.`
-          : `Couldn't load the status file (${lastFetchError}). Check the repository name, branch, file path, and network connection.`, true);
+          ? `Couldn't refresh GitHub data (${lastFetchError}). Showing the last successfully retrieved statuses.`
+          : `Couldn't load the status file (${lastFetchError}). Check the repository, branch, file path and network connection.`, true);
       } else if (payload && lastFetchAt !== null) {
         setConnection("ok", "Live status");
         showNotice("");
@@ -421,10 +527,7 @@
         setConnection("wait", "Connecting");
         showNotice("");
       }
-
-      els.lastSync.textContent = lastFetchAt === null
-        ? "Not synced yet"
-        : `Last checked ${relativeTime(lastFetchAt, now)} · auto-refresh on`;
+      els.lastSync.textContent = lastFetchAt === null ? "Not synced yet" : `Last checked ${relativeTime(lastFetchAt, now)} · auto-refresh on`;
     }
 
     async function fetchStatus() {
@@ -432,21 +535,17 @@
       isFetching = true;
       els.refreshIcon.classList.add("spin");
       try {
-        const url = `${STATUS_URL}?_=${Date.now()}`;
-        const response = await fetch(url, {
-          method: "GET",
-          cache: "no-store",
-          headers: { "Accept": "application/json" }
+        const response = await fetch(`${STATUS_URL}?_=${Date.now()}`, {
+          method: "GET", cache: "no-store", headers: { "Accept": "application/json" }
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        if (!data || typeof data !== "object" || Array.isArray(data)) {
-          throw new Error("unexpected JSON format");
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("unexpected JSON format");
+        if (data.bosses !== undefined && (data.bosses === null || typeof data.bosses !== "object" || Array.isArray(data.bosses))) {
+          throw new Error("the bosses field is not a JSON object");
         }
         const state = String(data.state || "unknown").toLowerCase();
-        if (!["alive", "dead", "unknown"].includes(state)) {
-          throw new Error("unrecognized status value");
-        }
+        if (!["alive", "dead", "unknown"].includes(state)) throw new Error("unrecognized legacy Beast state value");
         payload = data;
         lastFetchAt = Date.now();
         lastFetchError = null;
@@ -460,10 +559,7 @@
     }
 
     els.refreshButton.addEventListener("click", fetchStatus);
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) fetchStatus();
-    });
-
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) fetchStatus(); });
     fetchStatus();
     window.setInterval(() => render(), 1000);
     window.setInterval(() => fetchStatus(), POLL_INTERVAL_MS);
