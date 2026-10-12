@@ -255,8 +255,13 @@
   <script>
     "use strict";
 
-    const STATUS_URL = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/refs/heads/main/beast_status.json";
-    const STATUS_URL_ALT = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/main/beast_status.json";
+    // Prefer same-origin JSON when index.html is hosted from the beast-status
+    // GitHub Pages site. Cross-origin RAW fallbacks use the canonical URL formats.
+    // Do not send custom Cache-Control/Pragma/Expires request headers here: they
+    // can trigger a CORS preflight that raw.githubusercontent.com may reject.
+    const STATUS_URL_SAME_ORIGIN = new URL("./beast_status.json", document.baseURI).toString();
+    const STATUS_URL = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/main/beast_status.json";
+    const STATUS_URL_ALT = "https://raw.githubusercontent.com/PinkFluffyUnicorn6996/beast-status/refs/heads/main/beast_status.json";
     const POLL_INTERVAL_MS = 1_000;
     const DEFAULT_RESPAWN_SECONDS = 60 * 60;
     const $ = (id) => document.getElementById(id);
@@ -559,7 +564,7 @@
         const sequence = payload ? (Number.parseInt(payload.sequence ?? 0, 10) || 0) : 0;
         const updateAge = updated === null ? "update time unknown" : `JSON timestamp ${relativeTime(updated, now)} ago`;
         const requestTime = lastFetchDurationMs === null ? "fetch time unknown" : `${Math.round(lastFetchDurationMs)}ms fetch`;
-        els.lastSync.textContent = `Sync v1.6.3 · JSON ${rootState} · seq ${sequence} · ${updateAge} · ${requestTime} · ${lastFetchSource} · checked ${relativeTime(lastFetchAt, now)}`;
+        els.lastSync.textContent = `Sync v1.6.4 · JSON ${rootState} · seq ${sequence} · ${updateAge} · ${requestTime} · ${lastFetchSource} · checked ${relativeTime(lastFetchAt, now)}`;
       }
     }
 
@@ -636,12 +641,9 @@
           method: "GET",
           cache: "no-store",
           signal: controller.signal,
-          headers: {
-            "Accept": "application/json",
-            "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
-          }
+          // Keep this a CORS-simple GET. cache:no-store plus the unique query
+          // parameter above handles client caching without a preflight request.
+          headers: { "Accept": "application/json" }
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
@@ -679,8 +681,9 @@
       const started = performance.now();
       const cycle = ++fetchCounter;
       const endpoints = [
-        [STATUS_URL, "refs/heads"],
-        [STATUS_URL_ALT, "short-branch"]
+        [STATUS_URL_SAME_ORIGIN, "same-origin"],
+        [STATUS_URL, "raw-main"],
+        [STATUS_URL_ALT, "raw-refs"]
       ];
       try {
         const outcomes = await Promise.allSettled(endpoints.map(([url, route]) => fetchRawSnapshot(url, route, cycle)));
@@ -691,8 +694,8 @@
         if (!successful.length) throw new Error(failures.join("; ") || "Both public RAW routes failed");
         const merged = mergeRawSnapshots(successful);
         payload = merged.data;
-        const rootScoresDiffer = successful.length > 1 && compareScore(successful[0].data, successful[1].data) !== 0;
-        const bodiesDiffer = successful.length > 1 && JSON.stringify(successful[0].data) !== JSON.stringify(successful[1].data);
+        const rootScoresDiffer = successful.length > 1 && successful.slice(1).some((item) => compareScore(successful[0].data, item.data) !== 0);
+        const bodiesDiffer = successful.length > 1 && successful.slice(1).some((item) => JSON.stringify(successful[0].data) !== JSON.stringify(item.data));
         if (failures.length) {
           lastFetchWarning = `One public RAW route failed; using the responding JSON copy. ${failures.join("; ")}`;
         } else if (bodiesDiffer || rootScoresDiffer) {
@@ -702,10 +705,10 @@
         }
         lastFetchAt = Date.now();
         lastFetchDurationMs = performance.now() - started;
-        lastFetchSource = successful.length === 2 ? `${merged.rootRoute}+merged` : `${successful[0].route} only`;
+        lastFetchSource = successful.length > 1 ? `${merged.rootRoute}+merged (${successful.length}/${endpoints.length})` : `${successful[0].route} only`;
         lastFetchError = null;
         console.info("[Boss Tracker SYNC]", {
-          build: "1.6.3", totalFetchMs: Math.round(lastFetchDurationMs),
+          build: "1.6.4", totalFetchMs: Math.round(lastFetchDurationMs),
           routeResults: successful.map((item) => ({ route: item.route, ms: Math.round(item.fetchMs), state: item.state,
             updatedAt: item.score[0] || null, sequence: item.score[1] })),
           failures, selectedRootRoute: merged.rootRoute, selectedState: payload.state,
@@ -717,7 +720,7 @@
         lastFetchDurationMs = performance.now() - started;
         lastFetchSource = "RAW routes failed";
         console.error("[Boss Tracker SYNC] both public RAW JSON reads failed", {
-          build: "1.6.3", fetchMs: Math.round(lastFetchDurationMs), error: lastFetchError
+          build: "1.6.4", fetchMs: Math.round(lastFetchDurationMs), error: lastFetchError
         });
       } finally {
         isFetching = false;
