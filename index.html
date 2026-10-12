@@ -8,9 +8,9 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="description" content="Live boss status and respawn countdowns for Bestial Onslaught.">
-  <meta property="og:title" content="Boss Tracker">
+  <meta property="og:title" content="Bestial Onslaught — Live Boss Tracker">
   <meta property="og:description" content="Live boss status and respawn countdowns.">
-  <title>Boss Tracker — Live Status</title>
+  <title>Bestial Onslaught — Live Boss Tracker</title>
   <style>
     :root {
       color-scheme: dark;
@@ -210,6 +210,175 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
+
+    /* Polished dark-fantasy treatment. This layer is visual-only; live polling stays unchanged. */
+    :root {
+      --bg: #070a10;
+      --panel: rgba(15, 21, 32, .88);
+      --panel-strong: #101724;
+      --border: rgba(151, 175, 210, .16);
+      --text: #f4f7fc;
+      --muted: #9aa9be;
+      --subtle: #718096;
+      --green: #70f0b5;
+      --green-soft: rgba(112, 240, 181, .11);
+      --red: #ff7f8e;
+      --red-soft: rgba(255, 127, 142, .11);
+      --amber: #ffd58a;
+      --amber-soft: rgba(255, 213, 138, .11);
+      --blue: #9bc5ff;
+      --shadow: 0 28px 90px rgba(0, 0, 0, .36);
+      --radius: 26px;
+    }
+    body {
+      position: relative;
+      background:
+        radial-gradient(ellipse at 9% 5%, rgba(78, 111, 184, .19), transparent 34rem),
+        radial-gradient(ellipse at 91% 11%, rgba(42, 198, 150, .10), transparent 32rem),
+        radial-gradient(ellipse at 50% 100%, rgba(99, 66, 144, .08), transparent 40rem),
+        linear-gradient(180deg, #090e17 0%, #070a10 68%);
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(158, 182, 219, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(158, 182, 219, .035) 1px, transparent 1px);
+      background-size: 48px 48px;
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.8), transparent 82%);
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.8), transparent 82%);
+    }
+    .page { position: relative; z-index: 1; width: min(100% - 40px, 1120px); padding: 24px 0 34px; }
+    .topbar {
+      padding: 12px 14px; margin-bottom: 22px; border-radius: 20px;
+      border: 1px solid rgba(151,175,210,.12); background: rgba(12,17,27,.64);
+      box-shadow: 0 12px 34px rgba(0,0,0,.12); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    }
+    .brand { gap: 13px; }
+    .brand-mark {
+      width: 50px; height: 50px; border-radius: 16px; color: #b2d1ff;
+      border-color: rgba(143,188,255,.32);
+      background: linear-gradient(145deg, rgba(95,137,215,.22), rgba(66,210,163,.09));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 30px rgba(87,130,220,.12);
+    }
+    .brand-mark svg { width: 31px; height: 31px; }
+    .brand-name { font-size: 12px; letter-spacing: .19em; }
+    .brand-sub { margin-top: 5px; letter-spacing: .015em; }
+    .top-actions { gap: 13px; }
+    .live-pill { padding: 10px 12px; border: 1px solid rgba(112,240,181,.14); border-radius: 999px; background: rgba(112,240,181,.045); }
+    .icon-button { width: 42px; height: 42px; border-radius: 14px; background: rgba(255,255,255,.035); }
+    .icon-button:hover { transform: translateY(-1px); }
+    .hero {
+      position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(230px, .75fr);
+      align-items: center; gap: 22px; overflow: hidden; margin: 0 0 20px; padding: 30px 34px;
+      border: 1px solid rgba(151,175,210,.15); border-radius: 28px;
+      background: linear-gradient(115deg, rgba(20,29,44,.93), rgba(12,18,29,.90) 63%, rgba(17,29,38,.90));
+      box-shadow: 0 22px 64px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+    }
+    .hero::before { content: ""; position: absolute; width: 390px; height: 390px; right: 7%; top: -300px; border-radius: 50%; background: rgba(111,153,239,.13); filter: blur(20px); pointer-events: none; }
+    .hero-copy { position: relative; z-index: 1; min-width: 0; }
+    .eyebrow { display: flex; align-items: center; gap: 9px; color: #a8cbff; letter-spacing: .19em; }
+    .eyebrow-live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 13px rgba(112,240,181,.65); }
+    .hero h1 { margin: 12px 0 12px; font-size: clamp(34px, 5.2vw, 54px); letter-spacing: -.055em; line-height: 1.03; font-weight: 850; }
+    .hero h1 span { color: #a9caff; }
+    .hero .intro-copy { max-width: 600px; font-size: 13px; line-height: 1.8; color: #a5b2c7; }
+    .hero-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px; }
+    .hero-metric { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid rgba(151,175,210,.13); border-radius: 10px; color: #b9c7da; background: rgba(255,255,255,.025); font-size: 10px; font-weight: 750; letter-spacing: .045em; }
+    .hero-metric svg { width: 14px; height: 14px; color: #9bc5ff; }
+    .metric-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(112,240,181,.55); }
+    .hero-art { position: relative; z-index: 1; display: grid; place-items: center; min-height: 224px; isolation: isolate; }
+    .hero-orbit { position: absolute; width: 208px; height: 208px; border: 1px solid rgba(147,185,255,.16); border-radius: 50%; }
+    .hero-orbit-one { transform: rotate(-28deg) scaleX(.79); }
+    .hero-orbit-two { transform: rotate(33deg) scaleX(.79); border-color: rgba(103,230,183,.14); }
+    .hero-beast-mark {
+      position: relative; display: grid; place-items: center; width: 156px; aspect-ratio: 1; border-radius: 38% 38% 43% 43%;
+      color: #c0d8ff; border: 1px solid rgba(157,194,255,.33);
+      background: radial-gradient(circle at 45% 22%, rgba(105,150,238,.23), rgba(24,37,57,.84) 68%);
+      box-shadow: 0 0 55px rgba(88,130,219,.17), inset 0 1px 0 rgba(255,255,255,.08), inset 0 -25px 45px rgba(0,0,0,.17);
+      transform: rotate(2deg);
+    }
+    .hero-beast-mark svg { width: 112px; height: 112px; stroke-width: 2.25; filter: drop-shadow(0 4px 12px rgba(112,171,255,.18)); }
+    .hero-art-label { position: absolute; right: 0; bottom: 1px; display: grid; gap: 5px; padding: 10px 13px; border: 1px solid rgba(151,175,210,.15); border-radius: 12px; background: rgba(10,15,24,.86); box-shadow: 0 12px 28px rgba(0,0,0,.2); }
+    .hero-art-label > span { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .17em; }
+    .hero-art-label strong { display: flex; align-items: center; gap: 7px; color: #dbe5f4; font-size: 10px; letter-spacing: .06em; }
+    .hero-label-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(112,240,181,.6); }
+    .boss-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr)); gap: 18px; }
+    .boss-card {
+      border-radius: 24px; padding: 23px; border-color: rgba(151,175,210,.15);
+      background: linear-gradient(145deg, rgba(18,27,41,.97), rgba(11,16,26,.97));
+      box-shadow: 0 16px 44px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.025);
+      transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+    }
+    .boss-card::before { top: -112px; right: -86px; width: 270px; height: 270px; }
+    .boss-card:hover { transform: translateY(-2px); border-color: rgba(156,188,237,.28); box-shadow: 0 22px 52px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.035); }
+    .boss-card.alive { border-color: rgba(112,240,181,.22); }
+    .boss-card.dead { border-color: rgba(255,127,142,.22); }
+    .boss-card.unknown { border-color: rgba(255,213,138,.18); }
+    .boss-card-top { align-items: center; }
+    .boss-ident { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .boss-ident-copy { min-width: 0; }
+    .boss-emblem { display: grid; place-items: center; flex: 0 0 auto; width: 47px; height: 47px; border: 1px solid rgba(151,175,210,.19); border-radius: 15px; color: #b6d0ff; background: linear-gradient(145deg, rgba(105,145,218,.14), rgba(255,255,255,.025)); }
+    .boss-emblem svg { width: 30px; height: 30px; }
+    .boss-card.alive .boss-emblem { color: var(--green); border-color: rgba(112,240,181,.20); background: linear-gradient(145deg, rgba(112,240,181,.10), rgba(255,255,255,.02)); }
+    .boss-card.dead .boss-emblem { color: var(--red); border-color: rgba(255,127,142,.20); background: linear-gradient(145deg, rgba(255,127,142,.10), rgba(255,255,255,.02)); }
+    .boss-card.unknown .boss-emblem { color: var(--amber); }
+    .boss-overline { margin-bottom: 5px; }
+    .boss-name { font-size: clamp(21px, 2.5vw, 27px); }
+    .boss-id { margin-top: 6px; }
+    .state-pill { padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.035); }
+    .boss-description { margin-top: 18px; color: #aab8cb; }
+    .boss-timer-wrap { border-radius: 18px; padding: 18px 18px 15px; background: linear-gradient(135deg, rgba(5,9,16,.56), rgba(14,21,32,.42)); }
+    .boss-countdown { font-size: clamp(34px, 4.2vw, 50px); letter-spacing: -.07em; }
+    .boss-card.alive .boss-timer-wrap { border-color: rgba(112,240,181,.17); background: linear-gradient(135deg, rgba(31,80,62,.16), rgba(5,9,16,.35)); }
+    .boss-card.dead .boss-timer-wrap { border-color: rgba(255,127,142,.17); background: linear-gradient(135deg, rgba(94,35,47,.18), rgba(5,9,16,.35)); }
+    .boss-details { gap: 9px; margin-top: 12px; }
+    .boss-detail { padding: 12px 11px; border-radius: 13px; background: rgba(255,255,255,.025); }
+    .boss-detail-label { letter-spacing: .10em; }
+    .boss-card-foot { padding-top: 14px; }
+    .empty-state { padding: 34px 24px; border-radius: 24px; background: linear-gradient(145deg, rgba(18,27,41,.85), rgba(11,16,26,.85)); }
+    .notice.global-notice { border-radius: 15px; }
+    footer { margin-top: 17px; padding: 16px 5px 0; border-top: 1px solid rgba(151,175,210,.11); }
+    .footer-status { gap: 9px; color: #9aa9be; }
+    .footer-status svg { color: #9bc5ff; }
+    .footer-right { max-width: 75%; font-variant-numeric: tabular-nums; }
+    @media (max-width: 760px) {
+      .page { width: min(100% - 24px, 1120px); padding-top: 13px; }
+      .topbar { padding: 9px; margin-bottom: 14px; border-radius: 17px; }
+      .brand-mark { width: 43px; height: 43px; border-radius: 14px; }
+      .brand-mark svg { width: 27px; height: 27px; }
+      .brand-name { font-size: 10px; letter-spacing: .15em; }
+      .brand-sub { font-size: 10px; }
+      .top-actions { gap: 7px; }
+      .live-pill { padding: 8px 9px; font-size: 9px; }
+      .icon-button { width: 38px; height: 38px; }
+      .hero { grid-template-columns: minmax(0,1fr) 155px; gap: 8px; padding: 23px 20px; border-radius: 23px; }
+      .hero h1 { font-size: clamp(30px, 6vw, 42px); }
+      .hero-art { min-height: 175px; }
+      .hero-orbit { width: 150px; height: 150px; }
+      .hero-beast-mark { width: 112px; }
+      .hero-beast-mark svg { width: 84px; height: 84px; }
+      .hero-art-label { right: -5px; bottom: -3px; padding: 8px 9px; }
+      .hero-art-label > span { font-size: 7px; }
+      .hero-art-label strong { font-size: 8px; }
+      .hero-metrics { gap: 6px; margin-top: 15px; }
+      .hero-metric { padding: 7px 8px; font-size: 9px; }
+      .boss-grid { grid-template-columns: 1fr; gap: 12px; }
+      .boss-card { padding: 18px; border-radius: 20px; }
+      .boss-details { gap: 6px; }
+      .boss-detail { padding: 10px 8px; }
+      .boss-detail-value { font-size: 10px; }
+      .boss-description { min-height: 0; }
+      .boss-emblem { width: 41px; height: 41px; border-radius: 13px; }
+      .boss-emblem svg { width: 26px; height: 26px; }
+      .state-pill { padding: 7px 8px; font-size: 8px; }
+      .footer-right { max-width: 100%; overflow-wrap: anywhere; }
+    }
+    @media (max-width: 480px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-art { min-height: 145px; margin-top: 3px; }
+      .hero-orbit { width: 136px; height: 136px; }
+      .hero-beast-mark { width: 102px; }
+      .hero-beast-mark svg { width: 76px; height: 76px; }
+      .hero-art-label { right: calc(50% - 103px); bottom: -1px; }
+      .hero-metric { font-size: 8px; }
+    }
   </style>
 </head>
 <body>
@@ -217,7 +386,7 @@
     <header class="topbar">
       <div class="brand" aria-label="Boss Tracker home">
         <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m9 12 2 2 4-4"/><path d="M7.7 7.8 12 10l4.3-2.2"/></svg>
+<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24 8 10l17 7 7-6 7 6 17-7-10 14"/><path d="M16 24c0-8 7-13 16-13s16 5 16 13v10c0 10-7 18-16 23-9-5-16-13-16-23V24Z"/><path d="m21 29 10 4-2 5-9-2M43 29l-10 4 2 5 9-2"/><path d="m27 42 5 5 5-5M32 35v7"/><path d="M23 51 18 58M41 51l5 7" opacity=".7"/></svg>
         </div>
         <div>
           <div class="brand-name">Boss Tracker</div>
@@ -232,15 +401,28 @@
       </div>
     </header>
 
-    <section class="intro">
-      <div class="eyebrow">Live encounter monitor</div>
-      <h1>Every boss. One live view.</h1>
-      <p class="intro-copy">Live status and respawn countdowns for every boss recorded in the shared GitHub JSON. Beast stays in the original root fields; additional bosses appear as separate top-level records.</p>
+    <section class="intro hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-live" aria-hidden="true"></span> Live encounter monitor</div>
+        <h1>Every boss.<br><span>One live view.</span></h1>
+        <p class="intro-copy">One shared live feed for the Beast and every tracked boss. Confirmed status comes from the live snapshot; countdowns update locally every second.</p>
+        <div class="hero-metrics" aria-label="Tracker features">
+          <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m8.5 12.5 2.2 2.2 4.8-5"/></svg> Shared status</span>
+          <span class="hero-metric"><span class="metric-pulse" aria-hidden="true"></span> 1-second refresh</span>
+          <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg> Live countdowns</span>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-orbit hero-orbit-one"></div>
+        <div class="hero-orbit hero-orbit-two"></div>
+        <div class="hero-beast-mark"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24 8 10l17 7 7-6 7 6 17-7-10 14"/><path d="M16 24c0-8 7-13 16-13s16 5 16 13v10c0 10-7 18-16 23-9-5-16-13-16-23V24Z"/><path d="m21 29 10 4-2 5-9-2M43 29l-10 4 2 5 9-2"/><path d="m27 42 5 5 5-5M32 35v7"/><path d="M23 51 18 58M41 51l5 7" opacity=".7"/></svg></div>
+        <div class="hero-art-label"><span>BEAST TRACKER</span><strong><span class="hero-label-dot"></span> ONLINE · 24/7</strong></div>
+      </div>
     </section>
 
     <div class="notice global-notice" id="notice" role="status"></div>
     <section class="boss-grid" id="bossGrid" aria-label="Live boss status cards">
-      <div class="empty-state">Fetching the latest shared boss statuses from GitHub…</div>
+      <div class="empty-state">Connecting to the live status feed…</div>
     </section>
 
     <footer>
@@ -370,10 +552,15 @@
       card.dataset.bossKey = key;
       const head = makeElement("div", "boss-card-top");
       const identity = makeElement("div", "boss-ident");
-      identity.append(makeElement("div", "boss-overline", "Live encounter"));
+      const emblem = makeElement("div", "boss-emblem");
+      emblem.setAttribute("aria-hidden", "true");
+      emblem.innerHTML = '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24 8 10l17 7 7-6 7 6 17-7-10 14"/><path d="M16 24c0-8 7-13 16-13s16 5 16 13v10c0 10-7 18-16 23-9-5-16-13-16-23V24Z"/><path d="m21 29 10 4-2 5-9-2M43 29l-10 4 2 5 9-2"/><path d="m27 42 5 5 5-5M32 35v7"/><path d="M23 51 18 58M41 51l5 7" opacity=".7"/></svg>';
+      const identityCopy = makeElement("div", "boss-ident-copy");
+      identityCopy.append(makeElement("div", "boss-overline", "Live encounter"));
       const name = makeElement("h2", "boss-name", key);
       const id = makeElement("div", "boss-id", "Boss ID unavailable");
-      identity.append(name, id);
+      identityCopy.append(name, id);
+      identity.append(emblem, identityCopy);
       const pill = makeElement("div", "state-pill");
       pill.append(makeElement("span", "tiny-dot"), makeElement("span", "state-label", "Unknown"));
       head.append(identity, pill);
