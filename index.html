@@ -278,6 +278,7 @@
     let lastFetchSource = "";
     let fetchCounter = 0;
     let isFetching = false;
+    let pollTimer = null;
     const cards = new Map();
 
     function parseTimestamp(primary, fallback) {
@@ -564,7 +565,7 @@
         const sequence = payload ? (Number.parseInt(payload.sequence ?? 0, 10) || 0) : 0;
         const updateAge = updated === null ? "update time unknown" : `JSON timestamp ${relativeTime(updated, now)} ago`;
         const requestTime = lastFetchDurationMs === null ? "fetch time unknown" : `${Math.round(lastFetchDurationMs)}ms fetch`;
-        els.lastSync.textContent = `Sync v1.6.4 · JSON ${rootState} · seq ${sequence} · ${updateAge} · ${requestTime} · ${lastFetchSource} · checked ${relativeTime(lastFetchAt, now)}`;
+        els.lastSync.textContent = `Sync v1.6.8 · JSON ${rootState} · seq ${sequence} · ${updateAge} · ${requestTime} · ${lastFetchSource} · checked ${relativeTime(lastFetchAt, now)}`;
       }
     }
 
@@ -635,7 +636,7 @@
       const started = performance.now();
       const cacheBust = `${Date.now()}-${Math.random().toString(36).slice(2)}-${cycle}-${routeName}`;
       const controller = new AbortController();
-      const abortTimer = window.setTimeout(() => controller.abort("RAW JSON read timed out after 2500ms"), 2500);
+      const abortTimer = window.setTimeout(() => controller.abort("RAW JSON read timed out after 1000ms"), 1000);
       try {
         const response = await fetch(`${baseUrl}?cachebust=${cacheBust}`, {
           method: "GET",
@@ -674,8 +675,23 @@
       }
     }
 
+    function scheduleNextPoll(delayMs) {
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(() => {
+        pollTimer = null;
+        fetchStatus();
+      }, Math.max(25, delayMs));
+    }
+
     async function fetchStatus() {
-      if (isFetching) return;
+      if (pollTimer !== null) {
+        window.clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      if (isFetching) {
+        scheduleNextPoll(POLL_INTERVAL_MS);
+        return;
+      }
       isFetching = true;
       els.refreshIcon.classList.add("spin");
       const started = performance.now();
@@ -693,6 +709,8 @@
           .map(({ item, route }) => `${route}: ${item.reason instanceof Error ? item.reason.message : String(item.reason)}`);
         if (!successful.length) throw new Error(failures.join("; ") || "Both public RAW routes failed");
         const merged = mergeRawSnapshots(successful);
+        // Use the file parsed in this refresh as the displayed status. Do not let an older
+        // in-memory page payload override the JSON just fetched, even if its timestamp looks later.
         payload = merged.data;
         const rootScoresDiffer = successful.length > 1 && successful.slice(1).some((item) => compareScore(successful[0].data, item.data) !== 0);
         const bodiesDiffer = successful.length > 1 && successful.slice(1).some((item) => JSON.stringify(successful[0].data) !== JSON.stringify(item.data));
@@ -708,7 +726,7 @@
         lastFetchSource = successful.length > 1 ? `${merged.rootRoute}+merged (${successful.length}/${endpoints.length})` : `${successful[0].route} only`;
         lastFetchError = null;
         console.info("[Boss Tracker SYNC]", {
-          build: "1.6.4", totalFetchMs: Math.round(lastFetchDurationMs),
+          build: "1.6.8", totalFetchMs: Math.round(lastFetchDurationMs),
           routeResults: successful.map((item) => ({ route: item.route, ms: Math.round(item.fetchMs), state: item.state,
             updatedAt: item.score[0] || null, sequence: item.score[1] })),
           failures, selectedRootRoute: merged.rootRoute, selectedState: payload.state,
@@ -720,12 +738,15 @@
         lastFetchDurationMs = performance.now() - started;
         lastFetchSource = "RAW routes failed";
         console.error("[Boss Tracker SYNC] both public RAW JSON reads failed", {
-          build: "1.6.4", fetchMs: Math.round(lastFetchDurationMs), error: lastFetchError
+          build: "1.6.8", fetchMs: Math.round(lastFetchDurationMs), error: lastFetchError
         });
       } finally {
         isFetching = false;
         els.refreshIcon.classList.remove("spin");
         render();
+        // Start the next read one second after this cycle began when requests are fast;
+        // if GitHub took longer than a second, start the next read immediately after finish.
+        scheduleNextPoll(Math.max(0, POLL_INTERVAL_MS - (performance.now() - started)));
       }
     }
 
@@ -733,7 +754,6 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) fetchStatus(); });
     fetchStatus();
     window.setInterval(() => render(), 1000);
-    window.setInterval(() => fetchStatus(), POLL_INTERVAL_MS);
   </script>
 </body>
 </html>
