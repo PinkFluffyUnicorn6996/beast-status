@@ -442,7 +442,10 @@
     /* STATUS_SNAPSHOT_INJECTION */
     const LIVE_STATUS_URL = "https://beast-status-live.pinkfluffyunicorn6996.workers.dev/status";
     const LIVE_STATUS_CONFIGURED = !LIVE_STATUS_URL.includes("REPLACE_WITH");
-    const POLL_INTERVAL_MS = 1_000;
+    // Keep Worker invocations modest: refresh live data every 15s while visible,
+    // and every 60s in background tabs. The countdown itself still renders every second.
+    const POLL_INTERVAL_VISIBLE_MS = 15_000;
+    const POLL_INTERVAL_HIDDEN_MS = 60_000;
     const DEFAULT_RESPAWN_SECONDS = 60 * 60;
     const PUBLISHED_BUILD_ID = String(window.__BOSS_STATUS_BUILD_ID__ || "unpublished");
     const PUBLISHED_BUILD_AT = Number(window.__BOSS_STATUS_BUILT_AT__ || 0);
@@ -824,11 +827,32 @@
       lastFetchWarning = "Live Worker URL is not configured. Showing the last published fallback snapshot.";
     }
     els.refreshButton.addEventListener("click", fetchStatus);
+
+    // Use a self-scheduling timeout so background tabs back off without stopping
+    // the local countdown display. Manual refresh remains immediate.
+    let livePollTimer = null;
+    function scheduleLivePoll() {
+      if (livePollTimer !== null) window.clearTimeout(livePollTimer);
+      const delay = document.visibilityState === "hidden"
+        ? POLL_INTERVAL_HIDDEN_MS : POLL_INTERVAL_VISIBLE_MS;
+      livePollTimer = window.setTimeout(async () => {
+        livePollTimer = null;
+        await fetchLiveSnapshot();
+        scheduleLivePoll();
+      }, delay);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      scheduleLivePoll();
+      // Refresh once when the user returns to the tab, then resume the slower cadence.
+      if (document.visibilityState !== "hidden") void fetchLiveSnapshot();
+    });
+
     render();
     void fetchLiveSnapshot();
-    window.setInterval(() => void fetchLiveSnapshot(), POLL_INTERVAL_MS);
+    scheduleLivePoll();
 
-    // Status is immutable within this build; only the respawn countdown needs per-second rendering.
+    // The respawn countdown is local; it doesn't make network requests.
     window.setInterval(() => render(), 1000);
   </script>
 </body>
