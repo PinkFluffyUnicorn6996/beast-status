@@ -413,7 +413,7 @@
       <div class="hero-copy">
         <div class="eyebrow"><span class="eyebrow-live" aria-hidden="true"></span> Live encounter monitor</div>
         <h1>Every boss.<br><span>One live view.</span></h1>
-        <p class="intro-copy">Beast status refreshes from the existing endpoint every 10 seconds. Community bosses sync from the shared spreadsheet every 10 minutes; countdowns update locally without rebuilding the page.</p>
+        <p class="intro-copy">Beast status refreshes from the existing endpoint every 10 seconds. Community bosses sync from spreadsheet cells A1:F7 every 10 minutes; countdowns update locally without rebuilding the page.</p>
         <div class="hero-metrics" aria-label="Tracker features">
           <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m8.5 12.5 2.2 2.2 4.8-5"/></svg> Shared status</span>
           <span class="hero-metric"><span class="metric-pulse" aria-hidden="true"></span> Auto refresh every 10s</span>
@@ -551,23 +551,52 @@
       if (element.textContent !== text) element.textContent = text;
     }
 
+    function englishBossName(value) {
+      const name = String(value || "Unknown boss").trim();
+      const pieces = name.split("/");
+      return (pieces.length > 1 ? pieces[pieces.length - 1] : name).trim() || name;
+    }
+
+    function formatCompactDuration(totalSeconds) {
+      const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const parts = [];
+      if (days) parts.push(`${days}d`);
+      if (hours) parts.push(`${hours}h`);
+      if (minutes || parts.length === 0) parts.push(`${minutes}m`);
+      return parts.join(" ");
+    }
+
+    function normalizeCoordinates(value) {
+      let text = String(value ?? "").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
+      if (!text) return "";
+      // Google Sheets sometimes returns a numeric cell as 488571 instead of its
+      // displayed value "488 571". Restore the conventional six-digit coordinate pair.
+      const digits = text.replace(/\D/g, "");
+      if (/^\d{6}$/.test(digits) && !/[,.]/.test(text)) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+      return text;
+    }
+
     async function copyRespawnMessage(record, button) {
       if (!record) return;
       const now = Date.now();
-      const coordinates = String(record.coordinates || "coordinates unknown").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
+      const bossName = englishBossName(record.name);
+      const coordinates = normalizeCoordinates(record.coordinates) || "unknown";
       let message;
       if (record.state === "dead" && record.diedAt !== null && Number(record.respawnSeconds) > 0) {
         const respawnAt = record.diedAt + record.respawnSeconds * 1000;
-        const remaining = Math.ceil((respawnAt - now) / 1000);
-        if (remaining > 0) {
-          message = `${record.name} will respawn in ${formatDuration(remaining)}. The boss is gonna be at ${coordinates}.`;
+        const deltaSeconds = Math.ceil((respawnAt - now) / 1000);
+        if (deltaSeconds > 0) {
+          message = `${bossName} will respawn in ${formatCompactDuration(deltaSeconds)}. Coordinates: ${coordinates}`;
         } else {
-          message = `${record.name}'s expected respawn time passed ${formatDuration(Math.floor((now - respawnAt) / 1000))} ago. The boss is gonna be at ${coordinates}.`;
+          message = `${bossName} is overdue by ${formatCompactDuration(-deltaSeconds)}. Coordinates: ${coordinates}`;
         }
       } else if (record.state === "alive") {
-        message = `${record.name} is alive now. The boss is gonna be at ${coordinates}.`;
+        message = `${bossName} is alive now. Coordinates: ${coordinates}`;
       } else {
-        message = `${record.name} respawn time is unknown. The boss is gonna be at ${coordinates}.`;
+        message = `${bossName} respawn time unknown. Coordinates: ${coordinates}`;
       }
       try {
         let copied = false;
@@ -1062,9 +1091,23 @@
           reject(new Error("Could not load the Google Sheet. Make sure it is shared as Anyone with the link can view."));
         };
         const tqx = encodeURIComponent(`out:json;responseHandler:${callbackName}`);
-        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${tqx}&gid=${SHEET_GID}&headers=1&_=${Date.now()}`;
+        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${tqx}&gid=${SHEET_GID}&range=A1%3AF7&headers=1&_=${Date.now()}`;
         document.head.append(script);
       });
+    }
+
+    function gvizCellText(cell) {
+      if (!cell || (cell.v === null && cell.f === undefined) || (cell.v === undefined && cell.f === undefined)) return "";
+      const formatted = cell.f === null || cell.f === undefined ? "" : String(cell.f).trim();
+      const raw = cell.v === null || cell.v === undefined ? "" : String(cell.v).trim();
+      let value = formatted || raw;
+      const dateMatch = value.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,(\d{1,2}),(\d{1,2}),(\d{1,2}))?\)$/);
+      if (dateMatch) {
+        const [, year, month0, day, hour = "0", minute = "0", second = "0"] = dateMatch;
+        return `${String(day).padStart(2, "0")}.${String(Number(month0) + 1).padStart(2, "0")}.${year} ${Number(hour)}:${String(minute).padStart(2, "0")}${second !== "0" ? `:${String(second).padStart(2, "0")}` : ""}`;
+      }
+      if (/^\d{6}$/.test(value)) value = `${value.slice(0, 3)} ${value.slice(3)}`;
+      return value.replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
     }
 
     function gvizTableToRows(response) {
@@ -1072,18 +1115,7 @@
       const headers = (table.cols || []).map((col, i) => String(col?.label || col?.id || `column${i + 1}`).trim());
       const rows = [headers];
       for (const row of (table.rows || [])) {
-        const values = headers.map((_, i) => {
-          const cell = row?.c?.[i];
-          if (!cell || cell.v === null || cell.v === undefined) return "";
-          if (cell.f !== null && cell.f !== undefined && String(cell.f).trim() !== "") return String(cell.f).trim();
-          const value = String(cell.v);
-          const dateMatch = value.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,(\d{1,2}),(\d{1,2}),(\d{1,2}))?\)$/);
-          if (dateMatch) {
-            const [, year, month0, day, hour = "0", minute = "0", second = "0"] = dateMatch;
-            return `${String(day).padStart(2, "0")}.${String(Number(month0) + 1).padStart(2, "0")}.${year} ${Number(hour)}:${String(minute).padStart(2, "0")}${second !== "0" ? `:${String(second).padStart(2, "0")}` : ""}`;
-          }
-          return value;
-        });
+        const values = headers.map((_, i) => gvizCellText(row?.c?.[i]));
         if (values.some(v => String(v).trim())) rows.push(values);
       }
       return rows;
@@ -1093,56 +1125,33 @@
       if (sheetFetchInFlight) return;
       sheetFetchInFlight = true;
       try {
-        // JSONP works for both a deployed webpage and a local file:// page, unlike a
-        // normal cross-origin fetch which may be blocked by browser CORS rules.
+        // Query only the documented A1:F7 range: header plus six community bosses.
+        // This avoids unrelated columns/rows changing how the parser interprets data.
         const response = await loadSheetViaJsonp();
+        const table = response.table;
         const rows = gvizTableToRows(response);
-        if (rows.length < 2) throw new Error("no data rows found");
-        const headers = rows[0].map(v => v.trim());
-        // The source sheet calls the boss-name column "РБ" / "RB".
-        const nameCol = findColumn(headers, ["рб", "rb", "boss", "bossname", "name", "названиебосса", "босс", "имя"]);
-        const coordCol = findColumn(headers, ["coordinates", "coordinate", "coords", "location", "координаты", "координата", "место"]);
-        const xCol = findColumn(headers, ["x", "координатаx", "coordx"]);
-        const yCol = findColumn(headers, ["y", "координатаy", "coordy"]);
-        const zCol = findColumn(headers, ["z", "координатаz", "coordz"]);
-        const hoursCol = findColumn(headers, ["resphours", "respawnhours", "hours", "часыреспа", "часы"]);
-        const minutesCol = findColumn(headers, ["respminutes", "respawnminutes", "minutes", "минутыреспа", "минуты"]);
-        const durationCol = findColumn(headers, ["respawn", "resptime", "respawntime", "respawnduration", "времяреспа", "респавн"]);
-        const deathCol = findColumn(headers, ["deathtime", "diedat", "death", "lastdeath", "killedat", "timestamp", "времясмерти", "времяубийства", "время", "убит"]);
-        if (nameCol < 0 || deathCol < 0) throw new Error("could not identify boss-name and death-time columns; check the sheet headers");
+        if (rows.length < 2) throw new Error("no data rows found in A1:F7");
         const parsed = [];
-        // Only use sheet rows 2-7: the header row plus the six supported bosses.
-        // Ignore any notes or extra bosses added below row 7.
-        for (const row of rows.slice(1, 7)) {
-          const name = String(row[nameCol] || "").trim();
+        const rawRows = (table.rows || []).slice(0, 6);
+        // Confirmed source layout: A=name, B=coordinates, C=kill time,
+        // D=respawn hours, E=respawn minutes, F=next respawn (calculated in sheet).
+        // Use fixed column indices rather than translated/inferred header labels.
+        for (let i = 0; i < rawRows.length; i++) {
+          const raw = rawRows[i];
+          const values = [0, 1, 2, 3, 4, 5].map(index => gvizCellText(raw?.c?.[index]) || String(rows[i + 1]?.[index] || "").trim());
+          const name = String(values[0] || "").trim();
           if (!name) continue;
-          const diedAt = parseMoscowTimestamp(row[deathCol]);
-          let respawnSeconds = 0;
-          if (hoursCol >= 0 || minutesCol >= 0) {
-            respawnSeconds = (Number(String(row[hoursCol] || "0").replace(",", ".")) || 0) * 3600
-              + (Number(String(row[minutesCol] || "0").replace(",", ".")) || 0) * 60;
-          } else if (durationCol >= 0) {
-            const d = String(row[durationCol] || "").trim();
-            const hm = d.match(/(\d+(?:[.,]\d+)?)\s*(?:h|hr|hour|час)/i);
-            const mm = d.match(/(\d+(?:[.,]\d+)?)\s*(?:m|min|minute|мин)/i);
-            if (hm || mm) respawnSeconds = (Number((hm?.[1] || "0").replace(",", ".")) || 0) * 3600
-              + (Number((mm?.[1] || "0").replace(",", ".")) || 0) * 60;
-            else {
-              const pair = d.match(/^(\d+)\s*[:ч]\s*(\d{1,2})/i);
-              if (pair) respawnSeconds = Number(pair[1]) * 3600 + Number(pair[2]) * 60;
-            }
-          }
-          const coordParts = [xCol, yCol, zCol].filter(c => c >= 0).map(c => String(row[c] || "").trim());
-          // In this sheet, column B is the authoritative combined coordinate value
-          // (e.g. "488 571"). Prefer it even if Google returns a decorated header label.
-          const columnBCoordinates = String(row[1] || "").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
-          const coords = columnBCoordinates || (coordCol >= 0
-            ? String(row[coordCol] || "").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim()
-            : coordParts.length ? coordParts.join(", ") : "");
+          const coords = normalizeCoordinates(values[1]);
+          const diedAt = parseMoscowTimestamp(values[2]);
+          const hours = Number(String(values[3] || "0").replace(/\s/g, "").replace(",", ".")) || 0;
+          const minutes = Number(String(values[4] || "0").replace(/\s/g, "").replace(",", ".")) || 0;
+          const respawnSeconds = hours * 3600 + minutes * 60;
           const key = `sheet-${name.toLocaleLowerCase().replace(/[^a-zа-я0-9]+/gi, "-")}`;
           parsed.push({
-            key, name, bossId: null, state: diedAt && respawnSeconds > 0 ? "dead" : "unknown", diedAt,
-            updatedAt: Date.now(), respawnSeconds, sequence: 0, coordinates: coords
+            key, name, bossId: null,
+            state: diedAt !== null && respawnSeconds > 0 ? "dead" : "unknown",
+            diedAt, updatedAt: Date.now(), respawnSeconds, sequence: 0,
+            coordinates: coords
           });
         }
         sheetRecords = parsed;
