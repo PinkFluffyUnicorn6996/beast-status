@@ -182,7 +182,10 @@
     .boss-timer-label { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
     .boss-countdown { margin: 9px 0 7px; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: clamp(32px, 5vw, 48px); line-height: 1.08; letter-spacing: -.06em; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .boss-card.alive .boss-countdown { color: var(--green); font-size: clamp(27px, 4vw, 38px); letter-spacing: -.035em; }
-    .boss-card.dead .boss-countdown { color: #ffd8dd; }
+    .boss-card.dead .boss-countdown {
+      color: #ffd8dd; font-family: inherit; font-size: clamp(20px, 2.3vw, 28px);
+      line-height: 1.3; letter-spacing: -.025em; font-variant-numeric: normal;
+    }
     .boss-card.unknown .boss-countdown { color: var(--amber); font-size: clamp(28px, 4vw, 38px); letter-spacing: -.015em; }
     .boss-timer-note { color: var(--muted); font-size: 11px; line-height: 1.55; min-height: 17px; }
     .boss-meter { height: 4px; margin-top: 13px; overflow: hidden; border-radius: 4px; background: rgba(255,255,255,.07); }
@@ -201,7 +204,7 @@
     @media (max-width: 650px) {
       .boss-grid { grid-template-columns: 1fr; gap: 12px; }
       .boss-card { padding: 18px; border-radius: 19px; }
-      .boss-details { gap: 6px; }
+      .boss-details { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
       .boss-detail { padding: 9px 8px; }
       .boss-detail-value { font-size: 10px; }
       .boss-description { min-height: 0; }
@@ -328,7 +331,7 @@
     .boss-countdown { font-size: clamp(34px, 4.2vw, 50px); letter-spacing: -.07em; }
     .boss-card.alive .boss-timer-wrap { border-color: rgba(112,240,181,.17); background: linear-gradient(135deg, rgba(31,80,62,.16), rgba(5,9,16,.35)); }
     .boss-card.dead .boss-timer-wrap { border-color: rgba(255,127,142,.17); background: linear-gradient(135deg, rgba(94,35,47,.18), rgba(5,9,16,.35)); }
-    .boss-details { gap: 9px; margin-top: 12px; }
+    .boss-details { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px; margin-top: 12px; }
     .boss-detail { padding: 12px 11px; border-radius: 13px; background: rgba(255,255,255,.025); }
     .boss-detail-label { letter-spacing: .10em; }
     .boss-card-foot { padding-top: 14px; }
@@ -361,7 +364,7 @@
       .hero-metric { padding: 7px 8px; font-size: 9px; }
       .boss-grid { grid-template-columns: 1fr; gap: 12px; }
       .boss-card { padding: 18px; border-radius: 20px; }
-      .boss-details { gap: 6px; }
+      .boss-details { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
       .boss-detail { padding: 10px 8px; }
       .boss-detail-value { font-size: 10px; }
       .boss-description { min-height: 0; }
@@ -405,7 +408,7 @@
       <div class="hero-copy">
         <div class="eyebrow"><span class="eyebrow-live" aria-hidden="true"></span> Live encounter monitor</div>
         <h1>Every boss.<br><span>One live view.</span></h1>
-        <p class="intro-copy">One shared live feed for the Beast and every tracked boss. Confirmed status comes from the live snapshot; countdowns update locally every second.</p>
+        <p class="intro-copy">Beast status stays live. Community bosses sync from the shared spreadsheet every 10 minutes, with countdowns ordered by the next expected respawn.</p>
         <div class="hero-metrics" aria-label="Tracker features">
           <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m8.5 12.5 2.2 2.2 4.8-5"/></svg> Shared status</span>
           <span class="hero-metric"><span class="metric-pulse" aria-hidden="true"></span> 1-second refresh</span>
@@ -447,6 +450,14 @@
     const POLL_INTERVAL_VISIBLE_MS = 15_000;
     const POLL_INTERVAL_HIDDEN_MS = 60_000;
     const DEFAULT_RESPAWN_SECONDS = 60 * 60;
+    // Public read-only CSV export of the community Google Sheet.
+    const SHEET_ID = "1BTlQhhDqxV_4-FlzZUbpVHbULd7WWUvifYjtlu3oMVQ";
+    const SHEET_GID = "202947703";
+    const SHEET_POLL_INTERVAL_MS = 10 * 60 * 1000;
+    let sheetRecords = [];
+    let sheetLastFetchAt = null;
+    let sheetFetchError = null;
+    let sheetFetchInFlight = false;
     const PUBLISHED_BUILD_ID = String(window.__BOSS_STATUS_BUILD_ID__ || "unpublished");
     const PUBLISHED_BUILD_AT = Number(window.__BOSS_STATUS_BUILT_AT__ || 0);
     const $ = (id) => document.getElementById(id);
@@ -483,7 +494,8 @@
       if (!Number.isFinite(ms)) return "Not available";
       try {
         return new Intl.DateTimeFormat(undefined, {
-          year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+          weekday: "short", year: "numeric", month: "short", day: "numeric",
+          hour: "2-digit", minute: "2-digit", timeZoneName: "short"
         }).format(new Date(ms));
       } catch (_) { return new Date(ms).toLocaleString(); }
     }
@@ -515,13 +527,18 @@
     }
 
     function formatDuration(totalSeconds) {
-      const seconds = Math.max(0, Math.floor(totalSeconds));
+      const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
       const days = Math.floor(seconds / 86400);
       const hours = Math.floor((seconds % 86400) / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
-      const remainingSeconds = seconds % 60;
-      const clock = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
-      return days > 0 ? `${days}d ${clock}` : clock;
+      const parts = [];
+      if (days) parts.push(`${days} day${days === 1 ? "" : "s"}`);
+      if (hours) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+      if (minutes) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+      if (!parts.length) return "0 minutes";
+      if (parts.length === 1) return parts[0];
+      return `${parts.slice(0, -1).join(" ")} and ${parts[parts.length - 1]}`;
     }
 
     function setConnection(mode, label) {
@@ -580,12 +597,13 @@
       const death = makeDetail(details, "Death time");
       const respawn = makeDetail(details, "Expected respawn");
       const updated = makeDetail(details, "Last update");
+      const coordinates = makeDetail(details, "Coordinates");
       const foot = makeElement("div", "boss-card-foot");
       const respawnLength = makeElement("span", "respawn-length", "Respawn: not set");
       foot.append(respawnLength);
       card.append(head, description, timerWrap, details, foot);
       return { card, name, id, stateLabel: pill.querySelector(".state-label"), description, timer, timerNote,
-        meterFill, death, respawn, updated, respawnLength };
+        meterFill, death, respawn, updated, coordinates, respawnLength };
     }
 
     function normalizeRecord(key, section, rootDocument = null, isPrimaryBeast = false) {
@@ -668,7 +686,7 @@
         els.bossGrid.append(view.card);
       }
       const { card, name, id, stateLabel, description, timer, timerNote, meterFill,
-        death, respawn, updated, respawnLength } = view;
+        death, respawn, updated, coordinates, respawnLength } = view;
       const state = record.state;
       card.className = `boss-card ${state}`;
       name.textContent = record.name;
@@ -676,8 +694,10 @@
       stateLabel.textContent = state.toUpperCase();
       death.textContent = record.diedAt === null ? "Unknown" : safeDate(record.diedAt);
       updated.textContent = record.updatedAt === null ? "Not available" : safeDate(record.updatedAt);
+      coordinates.textContent = record.coordinates || "Not provided";
       const respawnAt = state === "dead" && record.diedAt !== null ? record.diedAt + record.respawnSeconds * 1000 : null;
-      respawnLength.textContent = `Respawn: ${formatDuration(record.respawnSeconds)}`;
+      respawnLength.textContent = record.respawnSeconds > 0
+        ? `Respawn: ${formatDuration(record.respawnSeconds)}` : "Respawn: not set";
       if (state === "alive") {
         description.textContent = `The shared status reports ${record.name} is alive.`;
         timer.textContent = "ALIVE";
@@ -705,22 +725,62 @@
         const elapsed = (now - record.diedAt) / (record.respawnSeconds * 1000);
         meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
       } else {
-        description.textContent = `No confirmed state for ${record.name} is available in the shared JSON yet.`;
-        timer.textContent = "--:--:--";
-        timerNote.textContent = "The countdown appears after a confirmed death with a valid timestamp.";
+        description.textContent = record.diedAt !== null && !(record.respawnSeconds > 0)
+          ? `${record.name} has a recorded kill time, but no respawn duration is configured yet.`
+          : `No confirmed state for ${record.name} is available in the shared JSON yet.`;
+        timer.textContent = "TIME UNKNOWN";
+        timerNote.textContent = "A respawn duration and death timestamp are required to calculate the expected respawn.";
         respawn.textContent = "Not available";
         meterFill.style.width = "0%";
       }
     }
 
     function render(now = Date.now()) {
-      if (!payload) {
+      if (!payload && !sheetRecords.length) {
         if (!els.bossGrid.querySelector(".empty-state")) {
           els.bossGrid.replaceChildren(makeElement("div", "empty-state", "Waiting for the shared boss status file…"));
         }
       } else {
         const records = getBossRecords(payload);
-        const present = new Set(records.map((record) => record.key));
+        const canonicalName = (value) => String(value || "").trim().toLocaleLowerCase();
+        for (const sheetRecord of sheetRecords) {
+          // Beast remains the canonical live Worker record. Spreadsheet entries supply
+          // the metadata/timers for every other matching boss and add bosses not in JSON.
+          const found = records.findIndex(r => canonicalName(r.name) === canonicalName(sheetRecord.name)
+            || r.key.toLocaleLowerCase() === sheetRecord.key.toLocaleLowerCase());
+          if (found >= 0) {
+            if (canonicalName(records[found].name) !== "beast") {
+              const liveRecord = records[found];
+              records[found] = { ...liveRecord, ...sheetRecord,
+                state: liveRecord.state === "alive" ? "alive" : sheetRecord.state,
+                updatedAt: liveRecord.updatedAt || sheetRecord.updatedAt };
+            }
+          } else if (canonicalName(sheetRecord.name) !== "beast"
+              && !records.some(r => canonicalName(r.name) === canonicalName(sheetRecord.name))) {
+            records.push(sheetRecord);
+          }
+        }
+        const beastRecord = records.find(r => canonicalName(r.name) === "beast");
+        const others = records.filter(r => canonicalName(r.name) !== "beast");
+        const expectedRespawn = (record) => record.state === "dead" && Number.isFinite(record.diedAt)
+          && Number(record.respawnSeconds) > 0
+          ? record.diedAt + record.respawnSeconds * 1000 : Number.POSITIVE_INFINITY;
+        others.sort((a, b) => {
+          const at = expectedRespawn(a), bt = expectedRespawn(b);
+          const aTimed = Number.isFinite(at), bTimed = Number.isFinite(bt);
+          if (aTimed !== bTimed) return aTimed ? -1 : 1;
+          if (aTimed && bTimed) {
+            const aUpcoming = at >= now, bUpcoming = bt >= now;
+            if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+            // Upcoming respawns first, nearest deadline at the top. Expired estimates
+            // follow with the most recently passed expected time first.
+            if (aUpcoming) return at - bt;
+            if (at !== bt) return bt - at;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        const orderedRecords = beastRecord ? [beastRecord, ...others] : others;
+        const present = new Set(orderedRecords.map((record) => record.key));
         for (const [key, view] of cards.entries()) {
           if (!present.has(key)) {
             view.card.remove();
@@ -729,14 +789,22 @@
         }
         const empty = els.bossGrid.querySelector(".empty-state");
         if (empty) empty.remove();
-        for (const record of records) renderBoss(record, now);
+        for (const record of orderedRecords) {
+          renderBoss(record, now);
+          // Appending an existing card moves it into its newly sorted position.
+          els.bossGrid.append(cards.get(record.key).card);
+        }
       }
 
       if (lastFetchError) {
-        setConnection(payload ? "wait" : "down", payload ? "Stale data" : "Offline");
+        setConnection(payload ? "wait" : (sheetRecords.length ? "warn" : "down"), payload ? "Stale data" : (sheetRecords.length ? "Sheet data" : "Offline"));
         showNotice(payload
           ? `Couldn't refresh the live status endpoint (${lastFetchError}). Showing the last successfully retrieved statuses.`
-          : `Couldn't load the live status endpoint (${lastFetchError}). Check the Worker URL and deployment.`, true);
+          : `Couldn't load the live status endpoint (${lastFetchError}). ${sheetRecords.length ? "Spreadsheet bosses are still shown." : "Check the Worker URL and spreadsheet access."}`
+            + (sheetFetchError ? ` Spreadsheet sync also failed: ${sheetFetchError}` : ""), true);
+      } else if (sheetFetchError) {
+        setConnection(payload ? "warn" : (sheetRecords.length ? "warn" : "wait"), payload ? "Live · sheet issue" : "Sheet unavailable");
+        showNotice(`Spreadsheet sync failed: ${sheetFetchError}. ${sheetRecords.length ? "Showing previously loaded spreadsheet bosses." : "Make sure the Google Sheet is shared as Anyone with the link can view."}`, true);
       } else if (lastFetchWarning) {
         setConnection("warn", "Fallback snapshot");
         showNotice(lastFetchWarning, false);
@@ -747,8 +815,11 @@
         setConnection("wait", "Connecting");
         showNotice("");
       }
+      const sheetStatus = sheetLastFetchAt
+        ? `Sheet synced ${relativeTime(sheetLastFetchAt, now)} ago · ${sheetRecords.length} bosses`
+        : sheetFetchError ? "Sheet sync failed" : "Sheet syncing";
       if (lastFetchAt === null) {
-        els.lastSync.textContent = "Not synced yet";
+        els.lastSync.textContent = `${sheetStatus} · Live feed not synced yet`;
       } else {
         const updated = payload ? parseTimestamp(payload.updated_at, payload.updated_at_utc) : null;
         const rootState = payload ? String(payload.state || "unknown").toUpperCase() : "UNKNOWN";
@@ -756,7 +827,189 @@
         const updateAge = updated === null ? "update time unknown" : `JSON timestamp ${relativeTime(updated, now)} ago`;
         const checked = relativeTime(lastFetchAt, now);
         const duration = lastFetchDurationMs === null ? "n/a" : `${lastFetchDurationMs.toFixed(0)}ms`;
-        els.lastSync.textContent = `Live v1.8.0 · ${lastFetchSource} · JSON ${rootState} · seq ${sequence} · ${updateAge} · checked ${checked} ago (${duration})`;
+        els.lastSync.textContent = `${sheetStatus} · Live v1.8.0 · ${lastFetchSource} · JSON ${rootState} · seq ${sequence} · ${updateAge} · checked ${checked} ago (${duration})`;
+      }
+    }
+
+
+    function normalizeHeader(value) {
+      return String(value || "").toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[ё]/g, "е").replace(/[^a-zа-я0-9]+/g, "");
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cell = "", quoted = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"' && quoted && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') quoted = !quoted;
+        else if (ch === "," && !quoted) { row.push(cell); cell = ""; }
+        else if ((ch === "\n" || ch === "\r") && !quoted) {
+          if (ch === "\r" && text[i + 1] === "\n") i++;
+          row.push(cell); if (row.some(v => v.trim())) rows.push(row);
+          row = []; cell = "";
+        } else cell += ch;
+      }
+      if (cell.length || row.length) { row.push(cell); if (row.some(v => v.trim())) rows.push(row); }
+      return rows;
+    }
+
+    function parseMoscowTimestamp(value) {
+      const raw = String(value || "").trim();
+      if (!raw) return null;
+      // Explicit ISO timestamps with a timezone already identify an absolute instant.
+      if (/[zZ]$|[+-]\d\d:?\d\d$/.test(raw)) {
+        const parsed = Date.parse(raw); return Number.isFinite(parsed) ? parsed : null;
+      }
+      const m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/)
+        || raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+      if (!m) {
+        const parsed = Date.parse(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      let year, month, day, hour, minute, second;
+      if (raw.match(/^\d{4}-/)) {
+        [, year, month, day, hour, minute, second] = m;
+      } else {
+        [, day, month, year, hour, minute, second] = m;
+      }
+      year = Number(year); if (year < 100) year += 2000;
+      month = Number(month); day = Number(day); hour = Number(hour || 0); minute = Number(minute || 0); second = Number(second || 0);
+      // Interpret naive spreadsheet date/time as Europe/Moscow, then convert to UTC.
+      const desired = Date.UTC(year, month - 1, day, hour, minute, second);
+      const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hourCycle:"h23" });
+      let guess = desired - 3 * 3600000;
+      for (let i = 0; i < 3; i++) {
+        const parts = Object.fromEntries(fmt.formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+        const represented = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+        guess += desired - represented;
+      }
+      return guess;
+    }
+
+    function findColumn(headers, candidates) {
+      return headers.findIndex(h => candidates.includes(normalizeHeader(h))
+        || candidates.some(c => c.length >= 5 && normalizeHeader(h).includes(c)));
+    }
+
+    function loadSheetViaJsonp() {
+      return new Promise((resolve, reject) => {
+        const callbackName = `__bossSheetCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const script = document.createElement("script");
+        let finished = false;
+        const cleanup = () => {
+          if (finished) return;
+          finished = true;
+          window.clearTimeout(timeoutId);
+          script.remove();
+          try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+        };
+        const timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Google Sheets did not respond; check that the sheet is shared for public viewing"));
+        }, 20000);
+        window[callbackName] = (response) => {
+          cleanup();
+          if (!response || response.status === "error" || !response.table) {
+            const detail = response?.errors?.map(e => e.detailed_message || e.message).filter(Boolean).join("; ");
+            reject(new Error(detail || "Google Sheets returned no table; make sure the spreadsheet is publicly readable"));
+            return;
+          }
+          resolve(response);
+        };
+        script.onerror = () => {
+          cleanup();
+          reject(new Error("Could not load the Google Sheet. Make sure it is shared as Anyone with the link can view."));
+        };
+        const tqx = encodeURIComponent(`out:json;responseHandler:${callbackName}`);
+        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${tqx}&gid=${SHEET_GID}&headers=1&_=${Date.now()}`;
+        document.head.append(script);
+      });
+    }
+
+    function gvizTableToRows(response) {
+      const table = response.table;
+      const headers = (table.cols || []).map((col, i) => String(col?.label || col?.id || `column${i + 1}`).trim());
+      const rows = [headers];
+      for (const row of (table.rows || [])) {
+        const values = headers.map((_, i) => {
+          const cell = row?.c?.[i];
+          if (!cell || cell.v === null || cell.v === undefined) return "";
+          if (cell.f !== null && cell.f !== undefined && String(cell.f).trim() !== "") return String(cell.f).trim();
+          const value = String(cell.v);
+          const dateMatch = value.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,(\d{1,2}),(\d{1,2}),(\d{1,2}))?\)$/);
+          if (dateMatch) {
+            const [, year, month0, day, hour = "0", minute = "0", second = "0"] = dateMatch;
+            return `${String(day).padStart(2, "0")}.${String(Number(month0) + 1).padStart(2, "0")}.${year} ${Number(hour)}:${String(minute).padStart(2, "0")}${second !== "0" ? `:${String(second).padStart(2, "0")}` : ""}`;
+          }
+          return value;
+        });
+        if (values.some(v => String(v).trim())) rows.push(values);
+      }
+      return rows;
+    }
+
+    async function fetchSpreadsheetBosses() {
+      if (sheetFetchInFlight) return;
+      sheetFetchInFlight = true;
+      try {
+        // JSONP works for both a deployed webpage and a local file:// page, unlike a
+        // normal cross-origin fetch which may be blocked by browser CORS rules.
+        const response = await loadSheetViaJsonp();
+        const rows = gvizTableToRows(response);
+        if (rows.length < 2) throw new Error("no data rows found");
+        const headers = rows[0].map(v => v.trim());
+        // The source sheet calls the boss-name column "РБ" / "RB".
+        const nameCol = findColumn(headers, ["рб", "rb", "boss", "bossname", "name", "названиебосса", "босс", "имя"]);
+        const coordCol = findColumn(headers, ["coordinates", "coordinate", "coords", "location", "координаты", "координата", "место"]);
+        const xCol = findColumn(headers, ["x", "координатаx", "coordx"]);
+        const yCol = findColumn(headers, ["y", "координатаy", "coordy"]);
+        const zCol = findColumn(headers, ["z", "координатаz", "coordz"]);
+        const hoursCol = findColumn(headers, ["resphours", "respawnhours", "hours", "часыреспа", "часы"]);
+        const minutesCol = findColumn(headers, ["respminutes", "respawnminutes", "minutes", "минутыреспа", "минуты"]);
+        const durationCol = findColumn(headers, ["respawn", "resptime", "respawntime", "respawnduration", "времяреспа", "респавн"]);
+        const deathCol = findColumn(headers, ["deathtime", "diedat", "death", "lastdeath", "killedat", "timestamp", "времясмерти", "времяубийства", "время", "убит"]);
+        if (nameCol < 0 || deathCol < 0) throw new Error("could not identify boss-name and death-time columns; check the sheet headers");
+        const parsed = [];
+        // Only use sheet rows 2-7: the header row plus the six supported bosses.
+        // Ignore any notes or extra bosses added below row 7.
+        for (const row of rows.slice(1, 7)) {
+          const name = String(row[nameCol] || "").trim();
+          if (!name) continue;
+          const diedAt = parseMoscowTimestamp(row[deathCol]);
+          let respawnSeconds = 0;
+          if (hoursCol >= 0 || minutesCol >= 0) {
+            respawnSeconds = (Number(String(row[hoursCol] || "0").replace(",", ".")) || 0) * 3600
+              + (Number(String(row[minutesCol] || "0").replace(",", ".")) || 0) * 60;
+          } else if (durationCol >= 0) {
+            const d = String(row[durationCol] || "").trim();
+            const hm = d.match(/(\d+(?:[.,]\d+)?)\s*(?:h|hr|hour|час)/i);
+            const mm = d.match(/(\d+(?:[.,]\d+)?)\s*(?:m|min|minute|мин)/i);
+            if (hm || mm) respawnSeconds = (Number((hm?.[1] || "0").replace(",", ".")) || 0) * 3600
+              + (Number((mm?.[1] || "0").replace(",", ".")) || 0) * 60;
+            else {
+              const pair = d.match(/^(\d+)\s*[:ч]\s*(\d{1,2})/i);
+              if (pair) respawnSeconds = Number(pair[1]) * 3600 + Number(pair[2]) * 60;
+            }
+          }
+          const coordParts = [xCol, yCol, zCol].filter(c => c >= 0).map(c => String(row[c] || "").trim());
+          const coords = coordCol >= 0 ? String(row[coordCol] || "").trim() : coordParts.length ? coordParts.join(", ") : "";
+          const key = `sheet-${name.toLocaleLowerCase().replace(/[^a-zа-я0-9]+/gi, "-")}`;
+          parsed.push({
+            key, name, bossId: null, state: diedAt && respawnSeconds > 0 ? "dead" : "unknown", diedAt,
+            updatedAt: Date.now(), respawnSeconds, sequence: 0, coordinates: coords
+          });
+        }
+        sheetRecords = parsed;
+        sheetLastFetchAt = Date.now();
+        sheetFetchError = null;
+      } catch (error) {
+        sheetFetchError = error instanceof Error ? error.message : String(error);
+        console.warn("[Boss Tracker] spreadsheet refresh failed", sheetFetchError);
+      } finally {
+        sheetFetchInFlight = false;
+        render();
       }
     }
 
@@ -849,6 +1102,8 @@
     });
 
     render();
+    void fetchSpreadsheetBosses();
+    window.setInterval(() => void fetchSpreadsheetBosses(), SHEET_POLL_INTERVAL_MS);
     void fetchLiveSnapshot();
     scheduleLivePoll();
 
