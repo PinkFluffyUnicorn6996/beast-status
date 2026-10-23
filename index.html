@@ -188,6 +188,11 @@
     }
     .boss-card.unknown .boss-countdown { color: var(--amber); font-size: clamp(28px, 4vw, 38px); letter-spacing: -.015em; }
     .boss-timer-note { color: var(--muted); font-size: 11px; line-height: 1.55; min-height: 17px; }
+    .boss-timer-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+    .copy-countdown-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 11px; border: 1px solid rgba(139,189,255,.22); border-radius: 10px; background: rgba(139,189,255,.075); color: #cfe0ff; cursor: pointer; font-size: 10px; font-weight: 800; transition: background .15s ease, border-color .15s ease; }
+    .copy-countdown-button:hover { background: rgba(139,189,255,.14); border-color: rgba(139,189,255,.38); }
+    .copy-countdown-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .copy-countdown-button.copied { color: var(--green); border-color: rgba(100,230,174,.32); background: rgba(100,230,174,.08); }
     .boss-meter { height: 4px; margin-top: 13px; overflow: hidden; border-radius: 4px; background: rgba(255,255,255,.07); }
     .boss-meter-fill { width: 0; height: 100%; border-radius: inherit; background: var(--blue); transition: width .45s linear; }
     .boss-card.alive .boss-meter-fill { background: var(--green); }
@@ -408,10 +413,10 @@
       <div class="hero-copy">
         <div class="eyebrow"><span class="eyebrow-live" aria-hidden="true"></span> Live encounter monitor</div>
         <h1>Every boss.<br><span>One live view.</span></h1>
-        <p class="intro-copy">Beast status stays live. Community bosses sync from the shared spreadsheet every 10 minutes, with countdowns ordered by the next expected respawn.</p>
+        <p class="intro-copy">Beast status refreshes from the existing endpoint every 10 seconds. Community bosses sync from the shared spreadsheet every 10 minutes; countdowns update locally without rebuilding the page.</p>
         <div class="hero-metrics" aria-label="Tracker features">
           <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.1-2.7 6.9-7 8.3-4.3-1.4-7-4.2-7-8.3V7l7-3.5Z"/><path d="m8.5 12.5 2.2 2.2 4.8-5"/></svg> Shared status</span>
-          <span class="hero-metric"><span class="metric-pulse" aria-hidden="true"></span> 1-second refresh</span>
+          <span class="hero-metric"><span class="metric-pulse" aria-hidden="true"></span> Auto refresh every 10s</span>
           <span class="hero-metric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg> Live countdowns</span>
         </div>
       </div>
@@ -445,10 +450,9 @@
     /* STATUS_SNAPSHOT_INJECTION */
     const LIVE_STATUS_URL = "https://beast-status-live.pinkfluffyunicorn6996.workers.dev/status";
     const LIVE_STATUS_CONFIGURED = !LIVE_STATUS_URL.includes("REPLACE_WITH");
-    // Keep Worker invocations modest: refresh live data every 15s while visible,
-    // and every 60s in background tabs. The countdown itself still renders every second.
-    const POLL_INTERVAL_VISIBLE_MS = 15_000;
-    const POLL_INTERVAL_HIDDEN_MS = 60_000;
+    // Use the existing HTTP /status endpoint only; no Worker changes or /ws route required.
+    const POLL_INTERVAL_VISIBLE_MS = 10_000;
+    const POLL_INTERVAL_HIDDEN_MS = 30_000;
     const DEFAULT_RESPAWN_SECONDS = 60 * 60;
     // Public read-only CSV export of the community Google Sheet.
     const SHEET_ID = "1BTlQhhDqxV_4-FlzZUbpVHbULd7WWUvifYjtlu3oMVQ";
@@ -474,6 +478,7 @@
     let lastFetchSource = payload ? "GitHub Pages fallback" : "No snapshot";
     let lastFetchDurationMs = null;
     let liveFetchInFlight = false;
+    let livePollTimer = null;
     let lastLiveErrorLogAt = 0;
     const cards = new Map();
 
@@ -541,14 +546,80 @@
       return `${parts.slice(0, -1).join(" ")} and ${parts[parts.length - 1]}`;
     }
 
+    function setTextIfChanged(element, value) {
+      const text = value === undefined || value === null ? "" : String(value);
+      if (element.textContent !== text) element.textContent = text;
+    }
+
+    async function copyRespawnMessage(record, button) {
+      if (!record) return;
+      const now = Date.now();
+      const coordinates = String(record.coordinates || "coordinates unknown").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
+      let message;
+      if (record.state === "dead" && record.diedAt !== null && Number(record.respawnSeconds) > 0) {
+        const respawnAt = record.diedAt + record.respawnSeconds * 1000;
+        const remaining = Math.ceil((respawnAt - now) / 1000);
+        if (remaining > 0) {
+          message = `${record.name} will respawn in ${formatDuration(remaining)}. The boss is gonna be at ${coordinates}.`;
+        } else {
+          message = `${record.name}'s expected respawn time passed ${formatDuration(Math.floor((now - respawnAt) / 1000))} ago. The boss is gonna be at ${coordinates}.`;
+        }
+      } else if (record.state === "alive") {
+        message = `${record.name} is alive now. The boss is gonna be at ${coordinates}.`;
+      } else {
+        message = `${record.name} respawn time is unknown. The boss is gonna be at ${coordinates}.`;
+      }
+      try {
+        let copied = false;
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          try {
+            await navigator.clipboard.writeText(message);
+            copied = true;
+          } catch (_) {
+            // Local file pages or strict browser permissions may reject Clipboard API;
+            // fall through to the classic textarea copy path.
+          }
+        }
+        if (!copied) {
+          const helper = document.createElement("textarea");
+          helper.value = message;
+          helper.setAttribute("readonly", "");
+          helper.style.position = "fixed";
+          helper.style.opacity = "0";
+          helper.style.pointerEvents = "none";
+          document.body.append(helper);
+          helper.select();
+          try { copied = document.execCommand("copy"); }
+          finally { helper.remove(); }
+        }
+        if (!copied) throw new Error("Clipboard access is not available in this browser");
+        button.textContent = "Copied!";
+        button.classList.add("copied");
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.textContent = "Copy respawn message";
+            button.classList.remove("copied");
+          }
+        }, 1400);
+      } catch (error) {
+        console.warn("Could not copy respawn message", error);
+        const previous = button.textContent;
+        button.textContent = "Select to copy";
+        window.setTimeout(() => { if (button.isConnected) button.textContent = previous || "Copy respawn message"; }, 1800);
+      }
+    }
+
     function setConnection(mode, label) {
-      els.connectionLabel.textContent = label;
-      els.liveDot.className = "live-dot" + (mode === "ok" ? "" : mode === "down" ? " down" : " warn");
+      setTextIfChanged(els.connectionLabel, label);
+      const dotClass = "live-dot" + (mode === "ok" ? "" : mode === "down" ? " down" : " warn");
+      if (els.liveDot.className !== dotClass) els.liveDot.className = dotClass;
     }
 
     function showNotice(message, isError = false) {
-      els.notice.textContent = message || "";
-      els.notice.className = "notice global-notice" + (message ? " visible" : "") + (isError ? " error" : "");
+      const text = message || "";
+      setTextIfChanged(els.notice, text);
+      const className = "notice global-notice" + (text ? " visible" : "") + (isError ? " error" : "");
+      if (els.notice.className !== className) els.notice.className = className;
     }
 
     function makeElement(tag, className, text = "") {
@@ -593,6 +664,13 @@
       const meterFill = makeElement("div", "boss-meter-fill");
       meter.append(meterFill);
       timerWrap.append(timer, timerNote, meter);
+      const timerActions = makeElement("div", "boss-timer-actions");
+      const copyButton = makeElement("button", "copy-countdown-button", "Copy respawn message");
+      copyButton.type = "button";
+      copyButton.setAttribute("aria-label", `Copy ${key} respawn message`);
+      copyButton.addEventListener("click", () => { void copyRespawnMessage(card.__bossRecord, copyButton); });
+      timerActions.append(copyButton);
+      timerWrap.append(timerActions);
       const details = makeElement("div", "boss-details");
       const death = makeDetail(details, "Death time");
       const respawn = makeDetail(details, "Expected respawn");
@@ -603,7 +681,7 @@
       foot.append(respawnLength);
       card.append(head, description, timerWrap, details, foot);
       return { card, name, id, stateLabel: pill.querySelector(".state-label"), description, timer, timerNote,
-        meterFill, death, respawn, updated, coordinates, respawnLength };
+        meterFill, death, respawn, updated, coordinates, respawnLength, copyButton, record: null };
     }
 
     function normalizeRecord(key, section, rootDocument = null, isPrimaryBeast = false) {
@@ -678,6 +756,55 @@
       return result;
     }
 
+    function updateCountdownDisplay(record, view, now = Date.now()) {
+      const { timer, timerNote, meterFill, respawn, description, card } = view;
+      const state = record.state;
+      const respawnAt = state === "dead" && record.diedAt !== null
+        ? record.diedAt + record.respawnSeconds * 1000 : null;
+      if (state === "alive") {
+        setTextIfChanged(timer, "ALIVE");
+        setTextIfChanged(timerNote, "The respawn countdown is inactive while the boss is alive.");
+        setTextIfChanged(respawn, "Alive now");
+        setTextIfChanged(description, `The shared status reports ${record.name} is alive.`);
+        meterFill.style.width = "100%";
+        card.dataset.countdownExpired = "false";
+      } else if (state === "dead" && record.diedAt === null) {
+        setTextIfChanged(timer, "TIME UNKNOWN");
+        setTextIfChanged(timerNote, "A known death timestamp is needed to calculate the respawn time.");
+        setTextIfChanged(respawn, "Not available");
+        setTextIfChanged(description, `${record.name} is reported dead, but the death timestamp is unknown.`);
+        meterFill.style.width = "0%";
+        card.dataset.countdownExpired = "false";
+      } else if (state === "dead" && respawnAt !== null) {
+        const remaining = Math.ceil((respawnAt - now) / 1000);
+        const expired = remaining <= 0;
+        const wasExpired = card.dataset.countdownExpired === "true";
+        const overdueSeconds = expired ? Math.floor((now - respawnAt) / 1000) : 0;
+        setTextIfChanged(timer, expired ? `OVERDUE +${formatDuration(overdueSeconds)}` : formatDuration(remaining));
+        setTextIfChanged(timerNote, expired
+          ? "OVERDUE · The timer is only an estimate. A passed timer does not prove the boss has spawned."
+          : `Expected respawn ${safeDate(respawnAt)} in your local time.`);
+        setTextIfChanged(respawn, safeDate(respawnAt));
+        setTextIfChanged(description, expired
+          ? `${record.name} is still reported DEAD in the shared JSON. Its estimated respawn time has passed; status changes only after a contributor confirms it alive.`
+          : `${record.name} is reported dead. The countdown is updating live.`);
+        const elapsed = record.respawnSeconds > 0 ? (now - record.diedAt) / (record.respawnSeconds * 1000) : 0;
+        meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
+        card.dataset.countdownExpired = expired ? "true" : "false";
+        // Expiry can change sorting; render() will be requested once at the boundary.
+        if (expired !== wasExpired) card.dataset.sortMayHaveChanged = "true";
+      } else {
+        setTextIfChanged(timer, "TIME UNKNOWN");
+        setTextIfChanged(timerNote, "A respawn duration and death timestamp are required to calculate the expected respawn.");
+        setTextIfChanged(respawn, "Not available");
+        setTextIfChanged(description, record.diedAt !== null && !(record.respawnSeconds > 0)
+          ? `${record.name} has a recorded kill time, but no respawn duration is configured yet.`
+          : `No confirmed state for ${record.name} is available in the shared JSON yet.`);
+        meterFill.style.width = "0%";
+        card.dataset.countdownExpired = "false";
+      }
+    }
+
     function renderBoss(record, now) {
       let view = cards.get(record.key);
       if (!view) {
@@ -685,54 +812,64 @@
         cards.set(record.key, view);
         els.bossGrid.append(view.card);
       }
-      const { card, name, id, stateLabel, description, timer, timerNote, meterFill,
-        death, respawn, updated, coordinates, respawnLength } = view;
+      const { card, name, id, stateLabel, death, updated, coordinates, respawnLength } = view;
+      view.record = record;
+      card.__bossRecord = record;
       const state = record.state;
-      card.className = `boss-card ${state}`;
-      name.textContent = record.name;
-      id.textContent = record.bossId === null ? "Boss ID not configured" : `Boss ID ${record.bossId}`;
-      stateLabel.textContent = state.toUpperCase();
-      death.textContent = record.diedAt === null ? "Unknown" : safeDate(record.diedAt);
-      updated.textContent = record.updatedAt === null ? "Not available" : safeDate(record.updatedAt);
-      coordinates.textContent = record.coordinates || "Not provided";
-      const respawnAt = state === "dead" && record.diedAt !== null ? record.diedAt + record.respawnSeconds * 1000 : null;
-      respawnLength.textContent = record.respawnSeconds > 0
-        ? `Respawn: ${formatDuration(record.respawnSeconds)}` : "Respawn: not set";
-      if (state === "alive") {
-        description.textContent = `The shared status reports ${record.name} is alive.`;
-        timer.textContent = "ALIVE";
-        timerNote.textContent = "The respawn countdown is inactive while the boss is alive.";
-        respawn.textContent = "Alive now";
-        meterFill.style.width = "100%";
-      } else if (state === "dead" && record.diedAt === null) {
-        description.textContent = `${record.name} is reported dead, but the death timestamp is unknown.`;
-        timer.textContent = "TIME UNKNOWN";
-        timerNote.textContent = "A known death timestamp is needed to calculate the respawn time.";
-        respawn.textContent = "Not available";
-        meterFill.style.width = "0%";
-      } else if (state === "dead") {
-        const remaining = Math.ceil((respawnAt - now) / 1000);
-        const expired = remaining <= 0;
-        const overdueSeconds = expired ? Math.floor((now - respawnAt) / 1000) : 0;
-        description.textContent = expired
-          ? `${record.name} is still reported DEAD in the shared JSON. Its estimated respawn time passed ${formatDuration(overdueSeconds)} ago; status will change only after a contributor confirms it alive.`
-          : `${record.name} is reported dead. The countdown is updating live.`;
-        timer.textContent = expired ? `OVERDUE +${formatDuration(overdueSeconds)}` : formatDuration(remaining);
-        timerNote.textContent = expired
-          ? "OVERDUE · The timer is only an estimate. A passed timer does not prove the boss has spawned."
-          : `Expected respawn ${safeDate(respawnAt)} in your local time.`;
-        respawn.textContent = safeDate(respawnAt);
-        const elapsed = (now - record.diedAt) / (record.respawnSeconds * 1000);
-        meterFill.style.width = `${Math.max(0, Math.min(100, elapsed * 100))}%`;
-      } else {
-        description.textContent = record.diedAt !== null && !(record.respawnSeconds > 0)
-          ? `${record.name} has a recorded kill time, but no respawn duration is configured yet.`
-          : `No confirmed state for ${record.name} is available in the shared JSON yet.`;
-        timer.textContent = "TIME UNKNOWN";
-        timerNote.textContent = "A respawn duration and death timestamp are required to calculate the expected respawn.";
-        respawn.textContent = "Not available";
-        meterFill.style.width = "0%";
+      const className = `boss-card ${state}`;
+      if (card.className !== className) card.className = className;
+      setTextIfChanged(name, record.name);
+      setTextIfChanged(id, record.bossId === null ? "Boss ID not configured" : `Boss ID ${record.bossId}`);
+      setTextIfChanged(stateLabel, state.toUpperCase());
+      setTextIfChanged(death, record.diedAt === null ? "Unknown" : safeDate(record.diedAt));
+      setTextIfChanged(updated, record.updatedAt === null ? "Not available" : safeDate(record.updatedAt));
+      setTextIfChanged(coordinates, record.coordinates || "Not provided");
+      setTextIfChanged(respawnLength, record.respawnSeconds > 0
+        ? `Respawn: ${formatDuration(record.respawnSeconds)}` : "Respawn: not set");
+      updateCountdownDisplay(record, view, now);
+    }
+
+    function reorderBossCardsIfNeeded(now = Date.now()) {
+      if (!cards.size) return;
+      const views = Array.from(cards.values()).filter(view => view.record);
+      const canonicalName = (value) => String(value || "").trim().toLocaleLowerCase();
+      views.sort((left, right) => {
+        const a = left.record, b = right.record;
+        const aBeast = canonicalName(a.name) === "beast", bBeast = canonicalName(b.name) === "beast";
+        if (aBeast !== bBeast) return aBeast ? -1 : 1;
+        const respawn = (r) => r.state === "dead" && Number.isFinite(r.diedAt) && Number(r.respawnSeconds) > 0
+          ? r.diedAt + r.respawnSeconds * 1000 : Number.POSITIVE_INFINITY;
+        const at = respawn(a), bt = respawn(b);
+        const aTimed = Number.isFinite(at), bTimed = Number.isFinite(bt);
+        if (aTimed !== bTimed) return aTimed ? -1 : 1;
+        if (aTimed && bTimed) {
+          const aUpcoming = at >= now, bUpcoming = bt >= now;
+          if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+          if (aUpcoming) return at - bt;
+          if (at !== bt) return bt - at;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      views.forEach((view, index) => {
+        const current = els.bossGrid.children[index];
+        if (current !== view.card) els.bossGrid.insertBefore(view.card, current || null);
+        delete view.card.dataset.sortMayHaveChanged;
+      });
+    }
+
+    function updateCountdowns() {
+      // Updating the countdown's text node can collapse a browser text selection. Pause
+      // DOM updates while a selection exists; the next tick recalculates from Date.now().
+      const selection = window.getSelection ? window.getSelection() : null;
+      if (selection && !selection.isCollapsed && String(selection).length) return;
+      const now = Date.now();
+      let sortMayHaveChanged = false;
+      for (const view of cards.values()) {
+        if (!view.record) continue;
+        updateCountdownDisplay(view.record, view, now);
+        if (view.card.dataset.sortMayHaveChanged === "true") sortMayHaveChanged = true;
       }
+      if (sortMayHaveChanged) reorderBossCardsIfNeeded(now);
     }
 
     function render(now = Date.now()) {
@@ -789,11 +926,13 @@
         }
         const empty = els.bossGrid.querySelector(".empty-state");
         if (empty) empty.remove();
-        for (const record of orderedRecords) {
+        orderedRecords.forEach((record, index) => {
           renderBoss(record, now);
-          // Appending an existing card moves it into its newly sorted position.
-          els.bossGrid.append(cards.get(record.key).card);
-        }
+          // Keep unchanged nodes in place so text selection is not lost during sync.
+          const card = cards.get(record.key).card;
+          const current = els.bossGrid.children[index];
+          if (current !== card) els.bossGrid.insertBefore(card, current || null);
+        });
       }
 
       if (lastFetchError) {
@@ -994,7 +1133,12 @@
             }
           }
           const coordParts = [xCol, yCol, zCol].filter(c => c >= 0).map(c => String(row[c] || "").trim());
-          const coords = coordCol >= 0 ? String(row[coordCol] || "").trim() : coordParts.length ? coordParts.join(", ") : "";
+          // In this sheet, column B is the authoritative combined coordinate value
+          // (e.g. "488 571"). Prefer it even if Google returns a decorated header label.
+          const columnBCoordinates = String(row[1] || "").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim();
+          const coords = columnBCoordinates || (coordCol >= 0
+            ? String(row[coordCol] || "").replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ").trim()
+            : coordParts.length ? coordParts.join(", ") : "");
           const key = `sheet-${name.toLocaleLowerCase().replace(/[^a-zа-я0-9]+/gi, "-")}`;
           parsed.push({
             key, name, bossId: null, state: diedAt && respawnSeconds > 0 ? "dead" : "unknown", diedAt,
@@ -1011,6 +1155,34 @@
         sheetFetchInFlight = false;
         render();
       }
+    }
+
+    function acceptLiveSnapshot(data, source, durationMs = null, receivedAt = "push") {
+      if (!data || typeof data !== "object" || Array.isArray(data)
+          || !["alive", "dead", "unknown"].includes(String(data.state || "unknown").toLowerCase())) {
+        throw new Error("unexpected live-status JSON format");
+      }
+      const previousState = payload ? String(payload.state || "unknown").toLowerCase() : null;
+      const previousSeq = payload ? Number(payload.sequence || 0) : -1;
+      const previousUpdated = payload ? parseTimestamp(payload.updated_at, payload.updated_at_utc) : null;
+      const nextUpdated = parseTimestamp(data.updated_at, data.updated_at_utc);
+      payload = data;
+      lastFetchAt = Date.now();
+      lastFetchDurationMs = Number.isFinite(durationMs) ? durationMs : null;
+      lastFetchError = null;
+      lastFetchWarning = null;
+      lastFetchSource = source;
+      if (previousState !== String(data.state || "unknown").toLowerCase()
+          || previousSeq !== Number(data.sequence || 0)
+          || previousUpdated !== nextUpdated) {
+        console.info("[Boss Tracker LIVE] snapshot received", {
+          source, previousState, state: data.state, sequence: data.sequence,
+          updatedAt: nextUpdated,
+          requestMs: Number.isFinite(durationMs) ? Math.round(durationMs) : "push",
+          receivedAt
+        });
+      }
+      render();
     }
 
     function fetchStatus() {
@@ -1036,31 +1208,11 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        if (!data || typeof data !== "object" || Array.isArray(data)
-            || !["alive", "dead", "unknown"].includes(String(data.state || "unknown").toLowerCase())) {
-          throw new Error("unexpected live-status JSON format");
-        }
-        const previousState = payload ? String(payload.state || "unknown").toLowerCase() : null;
-        const previousSeq = payload ? Number(payload.sequence || 0) : -1;
-        const previousUpdated = payload ? parseTimestamp(payload.updated_at, payload.updated_at_utc) : null;
-        const nextUpdated = parseTimestamp(data.updated_at, data.updated_at_utc);
-        // The Durable Object is the live authority. Accept its snapshot even if its
-        // sequence is reset by a migrated file; do not keep the embedded Pages copy.
-        payload = data;
-        lastFetchAt = Date.now();
-        lastFetchDurationMs = performance.now() - started;
-        lastFetchError = null;
-        lastFetchWarning = null;
-        lastFetchSource = "Live Worker";
-        if (previousState !== String(data.state || "unknown").toLowerCase()
-            || previousSeq !== Number(data.sequence || 0)
-            || previousUpdated !== nextUpdated) {
-          console.info("[Boss Tracker LIVE] status changed/confirmed", {
-            previousState, state: data.state, sequence: data.sequence,
-            updatedAt: nextUpdated, requestMs: Math.round(lastFetchDurationMs),
-            receivedAt: response.headers.get("X-Live-Received-At") || "not provided"
-          });
-        }
+        // Read the already-deployed Worker's existing HTTP endpoint. No WebSocket route is required.
+        acceptLiveSnapshot(
+          data, "Live Worker HTTP", performance.now() - started,
+          response.headers.get("X-Live-Received-At") || "not provided"
+        );
       } catch (error) {
         lastFetchError = error instanceof Error ? error.message : String(error);
         if (Date.now() - lastLiveErrorLogAt > 30_000) {
@@ -1076,16 +1228,17 @@
       }
     }
 
+
     if (!LIVE_STATUS_CONFIGURED) {
       lastFetchWarning = "Live Worker URL is not configured. Showing the last published fallback snapshot.";
     }
     els.refreshButton.addEventListener("click", fetchStatus);
 
-    // Use a self-scheduling timeout so background tabs back off without stopping
-    // the local countdown display. Manual refresh remains immediate.
-    let livePollTimer = null;
+    // Network polling is every 10s while visible (30s in a hidden tab). Countdown text
+    // updates locally every second and never triggers a page-wide render or network call.
     function scheduleLivePoll() {
       if (livePollTimer !== null) window.clearTimeout(livePollTimer);
+      livePollTimer = null;
       const delay = document.visibilityState === "hidden"
         ? POLL_INTERVAL_HIDDEN_MS : POLL_INTERVAL_VISIBLE_MS;
       livePollTimer = window.setTimeout(async () => {
@@ -1097,7 +1250,7 @@
 
     document.addEventListener("visibilitychange", () => {
       scheduleLivePoll();
-      // Refresh once when the user returns to the tab, then resume the slower cadence.
+      // Refresh immediately when the user returns, then resume the slower cadence.
       if (document.visibilityState !== "hidden") void fetchLiveSnapshot();
     });
 
@@ -1107,8 +1260,9 @@
     void fetchLiveSnapshot();
     scheduleLivePoll();
 
-    // The respawn countdown is local; it doesn't make network requests.
-    window.setInterval(() => render(), 1000);
+    // Only countdown number/note/indicator nodes are updated each second. The cards,
+    // page text and DOM order stay untouched unless source data actually changes.
+    window.setInterval(() => updateCountdowns(), 1000);
   </script>
 </body>
 </html>
