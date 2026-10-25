@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "state": "alive",
-  "died_at": null,
-  "died_at_utc": null,
-  "updated_at": 1792914855.639,
-  "updated_at_utc": "2026-10-25T07:54:15.639Z",
-  "sequence": 312
+  "state": "dead",
+  "died_at": 1792918066.992,
+  "died_at_utc": "2026-10-25T08:47:46.992Z",
+  "updated_at": 1792918067.813,
+  "updated_at_utc": "2026-10-25T08:47:47.812Z",
+  "sequence": 313
 }
